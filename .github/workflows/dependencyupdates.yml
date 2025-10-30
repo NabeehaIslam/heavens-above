@@ -1,42 +1,69 @@
 name: 🔄 Dependency Update Monitor
 
 on:
-  workflow_dispatch:        # ✅ allows manual trigger from GitHub UI
+  workflow_dispatch:          # ✅ allows manual trigger
   schedule:
-    - cron: '0 0 * * 0'     # ✅ runs every Sunday at midnight (UTC)
+    - cron: '0 0 * * 0'       # ✅ runs weekly (Sunday midnight UTC)
 
 permissions:
   contents: write
-  issues: write
+  pull-requests: write
 
 jobs:
-  dependency-check:
-    name: Check for Dependency Updates
+  update-dependencies:
     runs-on: ubuntu-latest
 
     steps:
       - name: 🧩 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Install jq (for JSON parsing)
-        run: sudo apt-get install jq -y
-
-      - name: 🔍 Check Latest Version of Cypress (example dependency)
-        id: check_version
-        run: |
-          echo "Fetching latest Cypress release..."
-          curl -s https://api.github.com/repos/cypress-io/cypress/releases/latest > latest.json
-          latest_version=$(jq -r '.tag_name' latest.json)
-          echo "Latest Cypress version: $latest_version"
-          echo "version=$latest_version" >> $GITHUB_OUTPUT
-
-      - name: 🧾 Create Issue for Detected Update
-        uses: peter-evans/create-issue-from-file@v5
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          title: "📦 Dependency Update: Cypress ${{ steps.check_version.outputs.version }}"
-          content-filepath: ./latest.json
-          labels: "automation, dependency-update"
-          assignees: ${{ github.actor }}
+          node-version: '20'
 
-      - name: ✅ Summary
-        run: echo "Dependency update check completed successfully!"
+      - name: 📦 Install Dependencies (Flexible)
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "Using npm ci"
+            npm ci
+          else
+            echo "No lockfile found — using npm install"
+            npm install
+          fi
+
+      - name: 🔍 Check for Outdated Dependencies
+        id: outdated
+        run: |
+          echo "Checking for outdated packages..."
+          npm outdated --json > outdated.json || true
+          if [ -s outdated.json ] && [ "$(cat outdated.json)" != "{}" ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🔄 Update Dependencies
+        if: steps.outdated.outputs.has_updates == 'true'
+        run: |
+          echo "Updating dependencies..."
+          npm update
+          npm audit fix || true
+
+      - name: 🧾 Create Pull Request for Updates
+        if: steps.outdated.outputs.has_updates == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: deps/update-${{ github.run_number }}
+          title: "🔄 Automated Dependency Updates"
+          body: |
+            This PR updates outdated dependencies automatically.
+            Please review before merging.
+          commit-message: "chore(deps): update dependencies"
+          delete-branch: true
+          labels: dependencies
+
+      - name: ✅ No Updates Found
+        if: steps.outdated.outputs.has_updates == 'false'
+        run: echo "✅ All dependencies are up-to-date!"
