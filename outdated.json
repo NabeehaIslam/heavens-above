@@ -1,0 +1,12 @@
+{
+  "cheerio": {
+    "wanted": "1.1.2",
+    "latest": "1.1.2",
+    "dependent": "heavens-above"
+  },
+  "request": {
+    "wanted": "2.88.2",
+    "latest": "2.88.2",
+    "dependent": "heavens-above"
+  }
+}
