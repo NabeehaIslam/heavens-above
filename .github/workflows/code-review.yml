@@ -1,18 +1,21 @@
-name: 🔍 Automated Code Review
+name: 🕵️ Code Review Workflow
 
 on:
+  push:
+    branches: [main]            # ✅ For CodeQL integration
   pull_request:
-    types: [opened, reopened, synchronize]  # Runs when PRs are created/updated
-  workflow_dispatch:                        # Also allow manual runs from UI
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write
   issues: write
+  pull-requests: write
+  security-events: write        # ✅ Required for CodeQL scanning
 
 jobs:
   code-review:
-    name: Run Code Review Checks
+    name: 🔍 Automated Code Review
     runs-on: ubuntu-latest
 
     steps:
@@ -50,7 +53,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
         continue-on-error: true
 
-      - name: 💬 Post Review Summary (safe for manual runs)
+      - name: 💬 Post Review Summary (safe for manual or PR runs)
         uses: actions/github-script@v7
         with:
           script: |
@@ -65,16 +68,20 @@ jobs:
 
 Please fix any reported issues before merging.`;
 
-            if (pr) {
-              await github.rest.issues.createComment({
-                issue_number: pr.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body
-              });
-              console.log("💬 Comment posted to PR #" + pr.number);
-            } else {
-              console.log("ℹ️ No pull request context — skipping PR comment.");
+            try {
+              if (pr) {
+                await github.rest.issues.createComment({
+                  issue_number: pr.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body
+                });
+                console.log("💬 Comment posted to PR #" + pr.number);
+              } else {
+                console.log("ℹ️ No pull request context — skipping PR comment.");
+              }
+            } catch (error) {
+              console.log("⚠️ Skipping comment due to API restrictions or missing context.");
             }
 
   enforce-policy:
