@@ -1,68 +1,18 @@
 version: 2
 updates:
-  # Enable version updates for npm
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "09:00"
+      time: "00:00"
+      timezone: "Asia/Karachi"
     open-pull-requests-limit: 5
-    
-    # Versioning strategy
-    versioning-strategy: "increase"
-    
-    # Group dependencies by type
-    groups:
-      # Group all patch and minor updates together
-      dependencies:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-      
-      # Separate major updates for careful review
-      major-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "major"
-    
-    # Automatically approve and merge minor/patch updates
-    reviewers:
-      - "stevenjoezhang"  # Replace with actual maintainer username
-    
-    # Commit message preferences
     commit-message:
-      prefix: "chore"
-      prefix-development: "chore"
+      prefix: "chore(deps)"
       include: "scope"
-    
-    # Labels for PRs
     labels:
       - "dependencies"
-      - "automated"
-    
-    # Ignore specific packages if needed
-    ignore:
-      # Example: ignore major version updates for deprecated packages
-      # - dependency-name: "request"
-      #   update-types: ["version-update:semver-major"]
-    
-    # Allow only direct dependencies (not transitive)
-    allow:
-      - dependency-type: "direct"
-  
-  # Enable version updates for GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    commit-message:
-      prefix: "ci"
-    labels:
-      - "github-actions"
-      - "automated"
+      - "dependabot"
+    reviewers:
+      - "NabeehaIslam"   # 👈 Add your GitHub username for automatic review requests
