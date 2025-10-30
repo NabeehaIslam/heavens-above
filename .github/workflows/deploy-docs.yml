@@ -1,43 +1,50 @@
 name: 📚 Documentation Deployment
 
 on:
+  # 🔹 Manual trigger from the GitHub Actions tab
+  workflow_dispatch:
+  
+  # 🔹 Automatically trigger when README or other markdown docs change
   push:
     branches:
       - main
     paths:
-      - 'docs/**'
-      - '*.md'
+      - README.md
+      - '**/*.md'
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build-and-deploy:
-    name: 🏗️ Build & Deploy Docs
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: 🧩 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: 🏗️ Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
 
-      - name: Install Documentation Generator
+      - name: 📦 Install dependencies
         run: |
-          npm install -g docsify-cli
+          if [ -f package.json ]; then
+            npm install
+          else
+            echo "No package.json found, skipping npm install"
+          fi
 
-      - name: Build Documentation
+      - name: 📝 Generate Documentation (optional)
         run: |
-          docsify init ./docs || echo "Docs folder already initialized."
+          mkdir -p docs
+          echo "# Project Documentation" > docs/index.md
+          echo "Generated from README.md" >> docs/index.md
+          cat README.md >> docs/index.md
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: 🚀 Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
-          publish_branch: gh-pages
