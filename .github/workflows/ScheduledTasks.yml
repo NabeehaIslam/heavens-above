@@ -1,35 +1,71 @@
-name: 🕒 Scheduled Maintenance Task
+name: Scheduled Maintenance Tasks
 
+# Schedule the workflow using cron syntax
 on:
   schedule:
-    # Runs every day at midnight (UTC)
-    - cron: '0 0 * * *'
-  workflow_dispatch:  # Allow manual trigger too
+    # Runs daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+    # Runs weekly on Sundays at 3:00 AM UTC
+    - cron: '0 3 * * 0'
+  
+  # Allows manual trigger from Actions tab
+  workflow_dispatch:
 
 jobs:
-  maintenance:
+  daily-maintenance:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout Repository
+      # Checkout repository code
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Run Maintenance Script
+      
+      # Example: Run a maintenance script
+      - name: Run maintenance tasks
         run: |
-          echo "Starting scheduled maintenance..."
-          # Example tasks:
-          # npm run cleanup
-          # python scripts/backup_data.py
-          echo "All tasks complete ✅"
-
-      - name: Upload Logs
+          echo "Starting daily maintenance tasks..."
+          date
+          echo "Performing cleanup operations..."
+          # Add your maintenance commands here
+          
+      # Example: Data backup simulation
+      - name: Backup data
         run: |
-          echo "Maintenance completed successfully on $(date)" >> maintenance.log
-
-      - name: Commit Logs
+          echo "Creating backup..."
+          mkdir -p backups
+          echo "Backup created on $(date)" > backups/backup-$(date +%Y%m%d).txt
+          
+      # Example: Send notification on success
+      - name: Success notification
+        if: success()
         run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "github-actions"
-          git add maintenance.log
-          git commit -m "Add maintenance log [skip ci]" || echo "No changes to commit"
-          git push
+          echo "✅ Scheduled tasks completed successfully at $(date)"
+          
+      # Example: Send notification on failure
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ Scheduled tasks failed at $(date)"
+
+  weekly-report:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 3 * * 0'  # Only runs on weekly schedule
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Generate weekly report
+        run: |
+          echo "Generating weekly report..."
+          echo "Week ending: $(date)"
+          # Add your weekly report generation logic here
+          
+      - name: Upload report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-report-${{ github.run_number }}
+          path: |
+            *.log
+            *.txt
+          retention-days: 30
