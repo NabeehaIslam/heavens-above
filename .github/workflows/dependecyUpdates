@@ -1,0 +1,144 @@
+name: Dependency Updates and Validation
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+  schedule:
+    # Run weekly on Mondays at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  # Automated dependency check and PR creation
+  dependency-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Check for outdated dependencies
+        id: check-deps
+        run: |
+          echo "Checking for outdated dependencies..."
+          npm outdated --json > outdated.json || true
+          
+          if [ -s outdated.json ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "📦 Found outdated dependencies:"
+            cat outdated.json | jq -r 'to_entries[] | "  - \(.key): \(.value.current) → \(.value.latest)"'
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "✅ All dependencies are up to date"
+          fi
+      
+      - name: Upload outdated dependencies report
+        if: steps.check-deps.outputs.has_updates == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-dependencies-${{ github.run_number }}
+          path: outdated.json
+          retention-days: 30
+
+  # Validate dependency updates on PRs
+  validate-updates:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          echo "Installing dependencies..."
+          npm ci
+      
+      - name: Run security audit
+        run: |
+          echo "Running security audit..."
+          npm audit --audit-level=moderate
+      
+      - name: Verify package integrity
+        run: |
+          echo "Verifying package integrity..."
+          npm ls --all
+      
+      - name: Test application
+        run: |
+          echo "Testing application startup..."
+          timeout 10s npm start || code=$?
+          if [ $code -eq 124 ]; then
+            echo "✅ Application started successfully (timed out as expected)"
+            exit 0
+          elif [ $code -eq 0 ]; then
+            echo "✅ Application completed successfully"
+            exit 0
+          else
+            echo "❌ Application failed with code $code"
+            exit $code
+          fi
+      
+      - name: Generate dependency report
+        if: always()
+        run: |
+          echo "=== Dependency Validation Report ===" > validation-report.txt
+          echo "Generated: $(date)" >> validation-report.txt
+          echo "PR: ${{ github.event.pull_request.number }}" >> validation-report.txt
+          echo "Branch: ${{ github.head_ref }}" >> validation-report.txt
+          echo "" >> validation-report.txt
+          echo "Installed packages:" >> validation-report.txt
+          npm list --depth=0 >> validation-report.txt 2>&1 || true
+          echo "" >> validation-report.txt
+          echo "Security audit:" >> validation-report.txt
+          npm audit >> validation-report.txt 2>&1 || true
+          cat validation-report.txt
+      
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report-${{ github.run_number }}
+          path: validation-report.txt
+          retention-days: 30
+      
+      - name: Comment on PR
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ **Dependency validation passed!**\n\nAll checks completed successfully:\n- Dependencies installed correctly\n- Security audit passed\n- Application startup verified\n\nSafe to merge after manual review.'
+            })
+      
+      - name: Comment on PR failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **Dependency validation failed!**\n\nPlease review the workflow logs for details. Common issues:\n- Breaking changes in updated packages\n- Security vulnerabilities\n- Compatibility issues\n\nManual review required before merging.'
+            })
