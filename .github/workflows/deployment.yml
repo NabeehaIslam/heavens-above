@@ -1,324 +1,55 @@
-
-
----
-
-## 📋 Table of Contents
-1. [GitHub Pages](#github-pages) ✅ *Recommended - Easiest*
-2. [Heroku](#heroku)
-3. [AWS S3 + CloudFront](#aws-s3--cloudfront)
-4. [Netlify](#netlify)
-5. [Vercel](#vercel)
-
----
-
-## 🌐 GitHub Pages
-
-### Prerequisites:
-1. Go to **Settings → Pages**
-2. Set **Source** to **GitHub Actions**
-
-### File: `.github/workflows/deploy-pages.yml`
-
-```yaml
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '16'
-      - run: npm install
-      - run: npm run build || echo "No build needed"
-      
-      - uses: actions/configure-pages@v4
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: './public'
-      - id: deployment
-        uses: actions/deploy-pages@v4
-```
-
-**✅ No secrets needed!**
-
----
-
-## 🟣 Heroku
-
-### Prerequisites:
-1. Create Heroku app: `heroku create your-app-name`
-2. Add secrets to GitHub:
-   - `HEROKU_API_KEY` (from Heroku dashboard)
-   - `HEROKU_APP_NAME` (your app name)
-   - `HEROKU_EMAIL` (your email)
-
-### File: `.github/workflows/deploy-heroku.yml`
-
-```yaml
-name: Deploy to Heroku
-
-on:
-  push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  build-test:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '16'
-      - run: npm install
-      - run: npm test || echo "No tests"
-      - run: npm run build || echo "No build"
-
-  deploy:
-    needs: build-test
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://${{ secrets.HEROKU_APP_NAME }}.herokuapp.com
+    
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - name: Deploy to Heroku
-        uses: akhileshns/heroku-deploy@v3.13.15
+      - name: Setup Node.js (if needed)
+        uses: actions/setup-node@v4
         with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: ${{ secrets.HEROKU_APP_NAME }}
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          else
+            echo "No package.json found, skipping npm install"
+          fi
+      
+      - name: Build project
+        run: |
+          if [ -f package.json ]; then
+            npm run build || echo "No build script found"
+          else
+            echo "No package.json found, skipping build"
+          fi
+      
+      # Deploy to GitHub Pages WITHOUT committing to main branch
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist  # Change this to your build output directory
+          # Common options: ./dist, ./build, ./public, ./docs
           
-      - name: Health Check
+      - name: Deployment Success
+        if: success()
         run: |
-          sleep 20
-          curl -f https://${{ secrets.HEROKU_APP_NAME }}.herokuapp.com || exit 1
-```
-
-**Required Secrets:**
-- `HEROKU_API_KEY`
-- `HEROKU_APP_NAME`
-- `HEROKU_EMAIL`
-
----
-
-## ☁️ AWS S3 + CloudFront
-
-### Prerequisites:
-1. Create S3 bucket (enable static website hosting)
-2. Create CloudFront distribution
-3. Configure AWS IAM user with S3 permissions
-4. Add secrets to GitHub:
-   - `AWS_ACCESS_KEY_ID`
-   - `AWS_SECRET_ACCESS_KEY`
-   - `AWS_S3_BUCKET`
-   - `AWS_REGION`
-   - `CLOUDFRONT_DISTRIBUTION_ID`
-
-### File: `.github/workflows/deploy-aws.yml`
-
-```yaml
-name: Deploy to AWS S3
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  build-deploy:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '16'
-          
-      - name: Install and Build
-        run: |
-          npm install
-          npm run build || echo "No build script"
-        env:
-          NODE_ENV: production
-      
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      
-      - name: Deploy to S3
-        run: |
-          aws s3 sync ./public s3://${{ secrets.AWS_S3_BUCKET }} --delete
-      
-      - name: Invalidate CloudFront Cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
-```
-
-**Required Secrets:**
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_S3_BUCKET`
-- `AWS_REGION`
-- `CLOUDFRONT_DISTRIBUTION_ID`
-
----
-
-## 🔷 Netlify
-
-### Prerequisites:
-1. Get Netlify Auth Token (User Settings → Applications)
-2. Get Site ID (Site Settings → General)
-3. Add secrets:
-   - `NETLIFY_AUTH_TOKEN`
-   - `NETLIFY_SITE_ID`
-
-### File: `.github/workflows/deploy-netlify.yml`
-
-```yaml
-name: Deploy to Netlify
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '16'
-      
-      - name: Build
-        run: |
-          npm install
-          npm run build || echo "No build"
-      
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v2.1
-        with:
-          publish-dir: './public'
-          production-branch: main
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "Deploy from GitHub Actions"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-```
-
-**Required Secrets:**
-- `NETLIFY_AUTH_TOKEN`
-- `NETLIFY_SITE_ID`
-
----
-
-## ▲ Vercel
-
-### Prerequisites:
-1. Get Vercel Token (Settings → Tokens)
-2. Add secrets:
-   - `VERCEL_TOKEN`
-   - `VERCEL_ORG_ID`
-   - `VERCEL_PROJECT_ID`
-
-### File: `.github/workflows/deploy-vercel.yml`
-
-```yaml
-name: Deploy to Vercel
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '16'
-      
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-      
-      - name: Pull Vercel Environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-      
-      - name: Build Project
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-      
-      - name: Deploy to Vercel
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-```
-
-**Required Secrets:**
-- `VERCEL_TOKEN`
-- `VERCEL_ORG_ID`
-- `VERCEL_PROJECT_ID`
-
----
-
-## 🔐 Adding Secrets to GitHub
-
-1. Go to **Settings → Secrets and variables → Actions**
-2. Click **"New repository secret"**
-3. Add each required secret with its name and value
-
----
-
-## ✅ Best Practices Implemented
-
-All workflows include:
-- ✅ **Build Stage** - Compile and prepare application
-- ✅ **Test Stage** - Run automated tests
-- ✅ **Security Scanning** - Check for vulnerabilities
-- ✅ **Deployment Stage** - Deploy to platform
-- ✅ **Health Checks** - Verify deployment success
-- ✅ **Error Handling** - Graceful failure management
-- ✅ **Notifications** - Status updates
-- ✅ **Concurrency Control** - Prevent conflicts
-- ✅ **Environment Protection** - Separate staging/production
-
----
-
-## 📝 Quick Start
-
-1. Choose your platform
-2. Copy the corresponding YAML file
-3. Create `.github/workflows/deploy.yml`
-4. Add required secrets
-5. Push to main branch
-6. Watch it deploy! 🚀
+          echo "✅ Deployment completed successfully!"
+          echo "Your site should be available at: https://nabeehalslam.github.io/heavens-above/"
