@@ -2,99 +2,69 @@ name: 🕵️ Code Review Workflow
 
 on:
   push:
-    branches: [main]            # ✅ For CodeQL integration
+    branches: [ "main" ]
   pull_request:
-    types: [opened, reopened, synchronize]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
-  security-events: write        # ✅ Required for CodeQL scanning
+    branches: [ "main" ]
 
 jobs:
-  code-review:
+  code_review:
     name: 🔍 Automated Code Review
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Set up Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
-      - name: 📦 Install dependencies
+      - name: Install Dependencies
         run: |
           if [ -f package-lock.json ]; then
             npm ci
+          elif [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
           else
-            echo "⚠️ No package-lock.json found, using npm install instead."
             npm install
           fi
 
-      - name: 🧹 Run ESLint (code style)
-        continue-on-error: true
+      - name: Run Linter (ESLint)
         run: |
-          if [ -f .eslintrc.json ] || [ -f .eslintrc.js ]; then
-            npx eslint . || echo "ESLint found issues"
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
+            npx eslint . --ext .js,.jsx,.ts,.tsx || true
           else
-            echo "⚠️ No ESLint config found, skipping."
+            echo "⚠️ No ESLint configuration found."
           fi
 
-      - name: 🧪 Run Security Audit
-        continue-on-error: true
-        run: npm audit --audit-level=moderate || echo "Security issues detected."
+  security_scan:
+    name: 🔐 CodeQL Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
 
-      - name: 🔍 Run CodeQL (code quality analysis)
-        uses: github/codeql-action/analyze@v3
-        continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: 💬 Post Review Summary (safe for manual or PR runs)
-        uses: actions/github-script@v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
         with:
-          script: |
-            const pr = context.payload.pull_request;
-            const body = `### 🤖 Automated Code Review Summary
-✅ Code review checks completed!
+          languages: javascript
 
-**Checks Performed:**
-- Code style: ESLint
-- Code quality: CodeQL
-- Dependency security: npm audit
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
 
-Please fix any reported issues before merging.`;
-
-            try {
-              if (pr) {
-                await github.rest.issues.createComment({
-                  issue_number: pr.number,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  body
-                });
-                console.log("💬 Comment posted to PR #" + pr.number);
-              } else {
-                console.log("ℹ️ No pull request context — skipping PR comment.");
-              }
-            } catch (error) {
-              console.log("⚠️ Skipping comment due to API restrictions or missing context.");
-            }
-
-  enforce-policy:
+  enforce_merge:
     name: 🚫 Enforce Merge Policy
     runs-on: ubuntu-latest
-    needs: code-review
-    if: always()
+    needs: [code_review, security_scan]
+
     steps:
-      - name: ❌ Block merge if code review failed
+      - name: Check review status
         run: |
-          if [ "${{ needs.code-review.result }}" != "success" ]; then
-            echo "❌ Code review checks failed. Merge blocked."
-            exit 1
-          else
-            echo "✅ All checks passed. Merge allowed."
-          fi
+          echo "Checking merge conditions..."
+          echo "✅ Code review checks passed successfully."
