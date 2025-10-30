@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Setup Node.js (if needed)
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
@@ -27,7 +27,8 @@ jobs:
       - name: Install dependencies
         run: |
           if [ -f package.json ]; then
-            npm ci
+            # Use npm install instead of npm ci (works without package-lock.json)
+            npm install
           else
             echo "No package.json found, skipping npm install"
           fi
@@ -40,16 +41,14 @@ jobs:
             echo "No package.json found, skipping build"
           fi
       
-      # Deploy to GitHub Pages WITHOUT committing to main branch
+      # Deploy to GitHub Pages WITHOUT committing
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist  # Change this to your build output directory
-          # Common options: ./dist, ./build, ./public, ./docs
+          publish_dir: ./dist  # Change to ./build or ./public if needed
           
       - name: Deployment Success
         if: success()
         run: |
           echo "✅ Deployment completed successfully!"
-          echo "Your site should be available at: https://nabeehalslam.github.io/heavens-above/"
