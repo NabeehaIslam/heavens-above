@@ -11,7 +11,6 @@ permissions:
 jobs:
   generate_release_notes:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,13 +20,17 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // Get tag name like "v1.0.0"
             const tag = context.ref.replace('refs/tags/', '');
+
+            // Generate notes using GitHub's built-in generator
             const generated = await github.rest.repos.generateReleaseNotes({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tag
             });
 
+            // Create a release with the generated notes
             const release = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -36,6 +39,7 @@ jobs:
               body: generated.data.body || `Release ${tag}`
             });
 
+            // Return release URL for next step
             core.setOutput('result', release.data.html_url);
 
       - name: Show Release URL
