@@ -3,34 +3,44 @@ name: 📝 Auto Generate Release Notes
 on:
   push:
     tags:
-      - 'v*'   # Triggers when a version tag like v1.0.0 is pushed
+      - 'v*'   # Triggers when a tag like v1.0.0 is pushed
+
+permissions:
+  contents: write
 
 jobs:
   generate_release_notes:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate Release Notes
+      - name: Generate and publish release notes
         id: notes
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: release } = await github.repos.createRelease({
+            // get tag name like "v1.0.0"
+            const tag = context.ref.replace('refs/tags/', '');
+
+            // generate notes using GitHub's generator
+            const generated = await github.repos.generateReleaseNotes({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: `🚀 Release ${context.ref.replace('refs/tags/', '')}`,
-              body: 'Release Notes will be automatically generated below 👇\n\n' +
-                (await github.repos.generateReleaseNotes({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  tag_name: context.ref.replace('refs/tags/', '')
-                })).data.body
+              tag_name: tag
             });
-            core.setOutput("release_url", release.html_url);
 
-      - name: Print Release URL
-        run: echo "✅ Release created: ${{ steps.notes.outputs.release_url }}"
+            // Create a release with the generated notes
+            const release = await github.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `🚀 Release ${tag}`,
+              body: generated.data.body || `Release ${tag}`
+            });
+
+            // Return the release HTML URL as the action result (available as steps.notes.outputs.result)
+            return release.data.html_url;
+
+      - name: Show Release URL
+        run: echo "Release created: ${{ steps.notes.outputs.result }}"
