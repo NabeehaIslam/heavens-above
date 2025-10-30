@@ -1,16 +1,12 @@
 name: 📚 Documentation Deployment
 
 on:
-  # 🔹 Manual trigger from the GitHub Actions tab
-  workflow_dispatch:
-  
-  # 🔹 Automatically trigger when README or other markdown docs change
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
-      - README.md
-      - '**/*.md'
+      - 'docs/**'
+      - 'README.md'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,29 +16,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout repository
+      - name: 🧩 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🏗️ Setup Node.js
+      - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 18
 
-      - name: 📦 Install dependencies
-        run: |
-          if [ -f package.json ]; then
-            npm install
-          else
-            echo "No package.json found, skipping npm install"
-          fi
+      - name: 📦 Install Dependencies
+        run: npm install
 
-      - name: 📝 Generate Documentation (optional)
+      - name: 🏗️ Build Documentation
         run: |
           mkdir -p docs
-          echo "# Project Documentation" > docs/index.md
-          echo "Generated from README.md" >> docs/index.md
-          cat README.md >> docs/index.md
+          echo "<h1>Heavens Above Documentation</h1><p>Auto-built on $(date)</p>" > docs/index.html
 
+      # ✨ New Step 1: Upload documentation as an artifact
+      - name: 📤 Upload Built Docs as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs_build
+          path: docs/
+
+      # ✨ New Step 2: Deploy to GitHub Pages
       - name: 🚀 Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
