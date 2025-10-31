@@ -3,6 +3,7 @@ name: 📚 Documentation Deployment
 on:
   push:
     branches: 
+      -gh-pages
       - main
       - master
     paths:
