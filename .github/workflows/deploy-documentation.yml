@@ -2,9 +2,7 @@ name: 📚 Documentation Deployment
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
     paths:
       - 'docs/**'
       - 'README.md'
@@ -16,7 +14,6 @@ permissions:
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -132,8 +129,13 @@ jobs:
     name: 🚀 Deploy Documentation to /docs
     needs: build-documentation
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
     permissions:
       contents: write
+      pages: write
+      id-token: write
+
     steps:
       - name: 📥 Download Documentation Artifact
         uses: actions/download-artifact@v4
@@ -141,10 +143,15 @@ jobs:
           name: documentation-build-${{ github.run_number }}
           path: docs/
 
-      # ✅ Use peaceiris/actions-gh-pages to push docs into /docs subfolder on gh-pages
-      - name: 🚀 Deploy to GitHub Pages (/docs)
-        uses: peaceiris/actions-gh-pages@v4
+      - name: 🔧 Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: 📦 Upload Pages Artifact (docs)
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
-          destination_dir: docs  # ensures your docs appear at /docs/
+          path: docs/
+          name: documentation
+
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
