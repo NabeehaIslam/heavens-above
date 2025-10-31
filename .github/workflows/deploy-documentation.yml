@@ -150,7 +150,6 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
-          name: documentation
 
       - name: 🚀 Deploy to GitHub Pages
         id: deployment
