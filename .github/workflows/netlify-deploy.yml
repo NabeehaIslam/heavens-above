@@ -1,0 +1,27 @@
+  deploy-netlify:
+    name: 🚀 Deploy to Netlify
+    needs: build-documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Download Documentation Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation-build-${{ github.run_number }}
+          path: docs/
+
+      - name: 🔧 Install Netlify CLI
+        run: npm install -g netlify-cli
+
+      - name: 🚀 Deploy to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          netlify deploy --dir=docs --prod --message "Docs build ${{ github.run_number }}"
+
+      - name: ✅ Deployment Summary
+        run: |
+          echo "# 🚀 Netlify Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "✅ *Status:* Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "📅 *Deployed:* $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" >> $GITHUB_STEP_SUMMARY
