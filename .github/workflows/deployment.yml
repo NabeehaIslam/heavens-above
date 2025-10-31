@@ -89,7 +89,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
       
       - name: Install dependencies
         run: |
@@ -97,6 +96,9 @@ jobs:
             npm ci
           elif [ -f package.json ]; then
             npm install
+          else
+            echo "⚠️ No package.json found, skipping tests"
+            exit 0
           fi
       
       - name: Run linting
@@ -233,15 +235,27 @@ jobs:
     steps:
       - name: Check deployment status
         run: |
-          if [ "${{ needs.deploy.result }}" == "success" ]; then
-            echo "🎉 PIPELINE SUCCESS"
-            echo "✅ Build: ${{ needs.build.result }}"
-            echo "✅ Test: ${{ needs.test.result }}"
-            echo "✅ Deploy: ${{ needs.deploy.result }}"
+          BUILD_STATUS="${{ needs.build.result }}"
+          TEST_STATUS="${{ needs.test.result }}"
+          DEPLOY_STATUS="${{ needs.deploy.result }}"
+          
+          echo "📊 Pipeline Results:"
+          echo "Build: $BUILD_STATUS"
+          echo "Test: $TEST_STATUS"
+          echo "Deploy: $DEPLOY_STATUS"
+          
+          if [ "$DEPLOY_STATUS" == "success" ]; then
+            echo "🎉 DEPLOYMENT SUCCESS!"
+            exit 0
+          elif [ "$DEPLOY_STATUS" == "skipped" ]; then
+            if [ "$BUILD_STATUS" == "success" ] && [ "$TEST_STATUS" == "success" ]; then
+              echo "✅ Build and Test passed (Deploy skipped - not on main branch)"
+              exit 0
+            else
+              echo "⚠️ Build or Test failed"
+              exit 1
+            fi
           else
-            echo "❌ PIPELINE FAILED"
-            echo "Build: ${{ needs.build.result }}"
-            echo "Test: ${{ needs.test.result }}"
-            echo "Deploy: ${{ needs.deploy.result }}"
+            echo "❌ DEPLOYMENT FAILED"
             exit 1
           fi
