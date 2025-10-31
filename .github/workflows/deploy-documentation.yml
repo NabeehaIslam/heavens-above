@@ -13,7 +13,8 @@ jobs:
       name: github-pages-docs
     steps:
       - uses: actions/checkout@v4
-      - run: |
+      - name: 🏗 Build Documentation
+        run: |
           mkdir -p documentation
           echo '<html><body><h1>Documentation</h1><p>Hello from Docs!</p><a href="../">Back to App</a></body></html>' > documentation/index.html
       - uses: actions/configure-pages@v4
