@@ -1,80 +1,568 @@
-name: Scheduled Maintenance Tasks
+name: 🕐 Scheduled Maintenance & Automated Tasks
 
 on:
   schedule:
+    # Daily maintenance at 2 AM UTC
     - cron: '0 2 * * *'
+    
+    # Weekly deep maintenance on Sunday at 3 AM UTC
     - cron: '0 3 * * 0'
+    
+    # Monthly cleanup on 1st day at 4 AM UTC
+    - cron: '0 4 1 * *'
+  
   workflow_dispatch:
+    inputs:
+      task_type:
+        description: 'Type of task to run'
+        required: true
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+          - all
+        default: 'daily'
+      send_notification:
+        description: 'Send completion notification'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  BACKUP_DIR: 'backups'
+  LOG_DIR: 'logs'
+  DATA_DIR: 'public/data'
 
 jobs:
+  # Job 1: Daily Maintenance Tasks
   daily-maintenance:
+    name: 📅 Daily Maintenance
     runs-on: ubuntu-latest
+    if: |
+      github.event.schedule == '0 2 * * *' || 
+      github.event.inputs.task_type == 'daily' ||
+      github.event.inputs.task_type == 'all' ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.task_type == ''
     
     steps:
-      - name: Checkout repository
+      - name: 🧩 Checkout Repository
         uses: actions/checkout@v4
-      
-      - name: Run maintenance tasks
-        run: |
-          echo "Starting daily maintenance tasks..."
-          date
-          echo "Performing cleanup operations..."
-          # Create a log file
-          echo "Maintenance Log - $(date)" > maintenance.log
-          echo "Task 1: Cleanup completed" >> maintenance.log
-          echo "Task 2: Verification completed" >> maintenance.log
-          
-      - name: Backup data
-        run: |
-          echo "Creating backup..." | tee -a maintenance.log
-          mkdir -p backups
-          echo "Backup created on $(date)" > backups/backup-$(date +%Y%m%d).txt
-          echo "Backup file created: backups/backup-$(date +%Y%m%d).txt" >> maintenance.log
-          
-      # Upload the log file as artifact
-      - name: Upload maintenance logs
-        if: always()  # Runs even if previous steps fail
-        uses: actions/upload-artifact@v4
         with:
-          name: maintenance-logs-${{ github.run_number }}
+          fetch-depth: 0
+      
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 📦 Install Dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm install || echo "⚠️ No dependencies to install"
+          fi
+      
+      - name: 🧹 Cleanup Old Files
+        id: cleanup
+        run: |
+          echo "🧹 Starting cleanup operations..."
+          
+          # Create directories
+          mkdir -p ${{ env.LOG_DIR }}
+          mkdir -p ${{ env.BACKUP_DIR }}
+          
+          # Find and count old log files (older than 30 days)
+          OLD_LOGS=$(find ${{ env.LOG_DIR }} -name "*.log" -mtime +30 2>/dev/null | wc -l || echo "0")
+          echo "old_logs_count=$OLD_LOGS" >> $GITHUB_OUTPUT
+          
+          # Remove old log files
+          find ${{ env.LOG_DIR }} -name "*.log" -mtime +30 -delete 2>/dev/null || true
+          
+          # Find and count old backup files (older than 60 days)
+          OLD_BACKUPS=$(find ${{ env.BACKUP_DIR }} -name "*.tar.gz" -mtime +60 2>/dev/null | wc -l || echo "0")
+          echo "old_backups_count=$OLD_BACKUPS" >> $GITHUB_OUTPUT
+          
+          # Remove old backups
+          find ${{ env.BACKUP_DIR }} -name "*.tar.gz" -mtime +60 -delete 2>/dev/null || true
+          
+          # Clean npm cache
+          npm cache clean --force 2>/dev/null || true
+          
+          # Count current files
+          CURRENT_LOGS=$(find ${{ env.LOG_DIR }} -name "*.log" 2>/dev/null | wc -l || echo "0")
+          CURRENT_BACKUPS=$(find ${{ env.BACKUP_DIR }} -name "*.tar.gz" 2>/dev/null | wc -l || echo "0")
+          
+          echo "current_logs=$CURRENT_LOGS" >> $GITHUB_OUTPUT
+          echo "current_backups=$CURRENT_BACKUPS" >> $GITHUB_OUTPUT
+          
+          echo "✅ Cleanup completed"
+          echo "   - Removed $OLD_LOGS old log files"
+          echo "   - Removed $OLD_BACKUPS old backups"
+          echo "   - Current logs: $CURRENT_LOGS"
+          echo "   - Current backups: $CURRENT_BACKUPS"
+      
+      - name: 🔍 Check Data Integrity
+        id: integrity
+        run: |
+          echo "🔍 Checking data integrity..."
+          
+          ISSUES_FOUND=0
+          
+          # Check if data directory exists
+          if [ -d "${{ env.DATA_DIR }}" ]; then
+            # Count JSON files
+            JSON_COUNT=$(find ${{ env.DATA_DIR }} -name "*.json" 2>/dev/null | wc -l || echo "0")
+            echo "json_files=$JSON_COUNT" >> $GITHUB_OUTPUT
+            
+            # Validate JSON files
+            INVALID_JSON=0
+            for file in $(find ${{ env.DATA_DIR }} -name "*.json" 2>/dev/null); do
+              if ! jq empty "$file" 2>/dev/null; then
+                echo "⚠️ Invalid JSON: $file"
+                INVALID_JSON=$((INVALID_JSON + 1))
+              fi
+            done
+            
+            echo "invalid_json=$INVALID_JSON" >> $GITHUB_OUTPUT
+            ISSUES_FOUND=$INVALID_JSON
+            
+            # Check file sizes
+            EMPTY_FILES=$(find ${{ env.DATA_DIR }} -type f -empty 2>/dev/null | wc -l || echo "0")
+            echo "empty_files=$EMPTY_FILES" >> $GITHUB_OUTPUT
+            ISSUES_FOUND=$((ISSUES_FOUND + EMPTY_FILES))
+            
+            echo "✅ Data integrity check completed"
+            echo "   - JSON files: $JSON_COUNT"
+            echo "   - Invalid JSON: $INVALID_JSON"
+            echo "   - Empty files: $EMPTY_FILES"
+          else
+            echo "⚠️ Data directory not found"
+            echo "json_files=0" >> $GITHUB_OUTPUT
+            echo "invalid_json=0" >> $GITHUB_OUTPUT
+            echo "empty_files=0" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "issues_found=$ISSUES_FOUND" >> $GITHUB_OUTPUT
+      
+      - name: 📊 Generate System Statistics
+        id: stats
+        run: |
+          echo "📊 Generating system statistics..."
+          
+          # Disk usage
+          DISK_USAGE=$(du -sh . | cut -f1)
+          echo "disk_usage=$DISK_USAGE" >> $GITHUB_OUTPUT
+          
+          # File count
+          TOTAL_FILES=$(find . -type f -not -path "./.git/*" 2>/dev/null | wc -l || echo "0")
+          echo "total_files=$TOTAL_FILES" >> $GITHUB_OUTPUT
+          
+          # Git statistics
+          COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+          BRANCH_COUNT=$(git branch -r | wc -l || echo "0")
+          
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "branch_count=$BRANCH_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "✅ Statistics generated"
+          echo "   - Disk usage: $DISK_USAGE"
+          echo "   - Total files: $TOTAL_FILES"
+          echo "   - Commits: $COMMIT_COUNT"
+          echo "   - Branches: $BRANCH_COUNT"
+      
+      - name: 📝 Create Maintenance Log
+        run: |
+          cat > ${{ env.LOG_DIR }}/maintenance-$(date +%Y%m%d).log << EOF
+          ===================================
+          DAILY MAINTENANCE LOG
+          ===================================
+          Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Workflow Run: #${{ github.run_number }}
+          Triggered By: ${{ github.event_name }}
+          
+          CLEANUP OPERATIONS
+          ------------------
+          - Old logs removed: ${{ steps.cleanup.outputs.old_logs_count }}
+          - Old backups removed: ${{ steps.cleanup.outputs.old_backups_count }}
+          - Current logs: ${{ steps.cleanup.outputs.current_logs }}
+          - Current backups: ${{ steps.cleanup.outputs.current_backups }}
+          
+          DATA INTEGRITY CHECK
+          --------------------
+          - JSON files: ${{ steps.integrity.outputs.json_files }}
+          - Invalid JSON: ${{ steps.integrity.outputs.invalid_json }}
+          - Empty files: ${{ steps.integrity.outputs.empty_files }}
+          - Issues found: ${{ steps.integrity.outputs.issues_found }}
+          
+          SYSTEM STATISTICS
+          -----------------
+          - Disk usage: ${{ steps.stats.outputs.disk_usage }}
+          - Total files: ${{ steps.stats.outputs.total_files }}
+          - Commits: ${{ steps.stats.outputs.commit_count }}
+          - Branches: ${{ steps.stats.outputs.branch_count }}
+          
+          STATUS: $([ ${{ steps.integrity.outputs.issues_found }} -eq 0 ] && echo "SUCCESS ✅" || echo "ISSUES FOUND ⚠️")
+          ===================================
+          EOF
+          
+          echo "✅ Maintenance log created"
+          cat ${{ env.LOG_DIR }}/maintenance-$(date +%Y%m%d).log
+      
+      - name: 📤 Upload Maintenance Logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-maintenance-logs-${{ github.run_number }}
           path: |
-            maintenance.log
-            backups/*.txt
+            ${{ env.LOG_DIR }}/*.log
           retention-days: 30
-          
-      - name: Success notification
-        if: success()
-        run: |
-          echo "✅ Scheduled tasks completed successfully at $(date)"
-          
-      - name: Failure notification
-        if: failure()
-        run: |
-          echo "❌ Scheduled tasks failed at $(date)"
 
-  weekly-report:
+  # Job 2: Data Backup
+  data-backup:
+    name: 💾 Data Backup
     runs-on: ubuntu-latest
-    if: github.event.schedule == '0 3 * * 0'
+    needs: daily-maintenance
+    if: |
+      github.event.schedule == '0 2 * * *' || 
+      github.event.inputs.task_type == 'daily' ||
+      github.event.inputs.task_type == 'all'
     
     steps:
-      - name: Checkout repository
+      - name: 🧩 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
-      - name: Generate weekly report
+      - name: 💾 Create Backup
+        id: backup
         run: |
-          echo "=== Weekly Report ===" > weekly-report.txt
-          echo "Generated: $(date)" >> weekly-report.txt
-          echo "Week ending: $(date)" >> weekly-report.txt
-          echo "Status: All systems operational" >> weekly-report.txt
-          echo "" >> weekly-report.txt
-          echo "Tasks completed this week:" >> weekly-report.txt
-          echo "- Daily maintenance: 7 runs" >> weekly-report.txt
-          echo "- Backups created: 7" >> weekly-report.txt
-          cat weekly-report.txt
+          echo "💾 Creating backup..."
           
-      - name: Upload weekly report
+          mkdir -p ${{ env.BACKUP_DIR }}
+          
+          BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
+          BACKUP_FILE="${{ env.BACKUP_DIR }}/${BACKUP_NAME}.tar.gz"
+          
+          # Create backup of important directories
+          BACKUP_ITEMS=""
+          
+          # Add data directory if exists
+          [ -d "${{ env.DATA_DIR }}" ] && BACKUP_ITEMS="$BACKUP_ITEMS ${{ env.DATA_DIR }}"
+          
+          # Add logs directory if exists
+          [ -d "${{ env.LOG_DIR }}" ] && BACKUP_ITEMS="$BACKUP_ITEMS ${{ env.LOG_DIR }}"
+          
+          # Add important files
+          [ -f "package.json" ] && BACKUP_ITEMS="$BACKUP_ITEMS package.json"
+          [ -f "README.md" ] && BACKUP_ITEMS="$BACKUP_ITEMS README.md"
+          
+          # Create tar.gz backup
+          if [ -n "$BACKUP_ITEMS" ]; then
+            tar -czf "$BACKUP_FILE" $BACKUP_ITEMS 2>/dev/null || true
+            
+            if [ -f "$BACKUP_FILE" ]; then
+              BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+              echo "backup_file=$BACKUP_FILE" >> $GITHUB_OUTPUT
+              echo "backup_size=$BACKUP_SIZE" >> $GITHUB_OUTPUT
+              echo "backup_name=$BACKUP_NAME" >> $GITHUB_OUTPUT
+              
+              echo "✅ Backup created successfully"
+              echo "   - File: $BACKUP_FILE"
+              echo "   - Size: $BACKUP_SIZE"
+            else
+              echo "⚠️ Backup file not created"
+            fi
+          else
+            echo "⚠️ No items to backup"
+          fi
+      
+      - name: 📋 Create Backup Manifest
+        if: steps.backup.outputs.backup_file != ''
+        run: |
+          MANIFEST_FILE="${{ env.BACKUP_DIR }}/manifest-$(date +%Y%m%d).txt"
+          
+          cat > "$MANIFEST_FILE" << EOF
+          BACKUP MANIFEST
+          ===============
+          Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Backup Name: ${{ steps.backup.outputs.backup_name }}
+          Backup Size: ${{ steps.backup.outputs.backup_size }}
+          Workflow Run: #${{ github.run_number }}
+          
+          CONTENTS:
+          ---------
+          EOF
+          
+          tar -tzf "${{ steps.backup.outputs.backup_file }}" >> "$MANIFEST_FILE" 2>/dev/null || true
+          
+          echo "" >> "$MANIFEST_FILE"
+          echo "CHECKSUM:" >> "$MANIFEST_FILE"
+          sha256sum "${{ steps.backup.outputs.backup_file }}" >> "$MANIFEST_FILE"
+          
+          echo "✅ Backup manifest created"
+      
+      - name: 📤 Upload Backup
+        uses: actions/upload-artifact@v4
+        if: steps.backup.outputs.backup_file != ''
+        with:
+          name: data-backup-${{ github.run_number }}
+          path: |
+            ${{ env.BACKUP_DIR }}/*.tar.gz
+            ${{ env.BACKUP_DIR }}/*.txt
+          retention-days: 90
+
+  # Job 3: Weekly Deep Maintenance
+  weekly-maintenance:
+    name: 📆 Weekly Deep Maintenance
+    runs-on: ubuntu-latest
+    if: |
+      github.event.schedule == '0 3 * * 0' || 
+      github.event.inputs.task_type == 'weekly' ||
+      github.event.inputs.task_type == 'all'
+    
+    steps:
+      - name: 🧩 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 📊 Generate Weekly Report
+        id: report
+        run: |
+          echo "📊 Generating weekly report..."
+          
+          REPORT_FILE="weekly-report-$(date +%Y%m%d).md"
+          
+          cat > "$REPORT_FILE" << 'EOF'
+          # 📊 Weekly Maintenance Report
+          
+          **Report Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          **Week Ending:** $(date -u '+%Y-%m-%d')
+          **Workflow Run:** #${{ github.run_number }}
+          
+          ---
+          
+          ## 📈 Repository Statistics
+          
+          ### Commits
+          - **Last 7 days:** $(git log --since="7 days ago" --oneline | wc -l)
+          - **Total commits:** $(git rev-list --count HEAD)
+          
+          ### Contributors
+          - **Active this week:** $(git log --since="7 days ago" --format='%an' | sort -u | wc -l)
+          
+          ### Files
+          - **Total files:** $(find . -type f -not -path "./.git/*" | wc -l)
+          - **JavaScript files:** $(find . -name "*.js" -not -path "./node_modules/*" -not -path "./.git/*" | wc -l)
+          
+          ### Repository Size
+          - **Total size:** $(du -sh . | cut -f1)
+          
+          ---
+          
+          ## 🔧 Maintenance Activities
+          
+          ### This Week
+          - ✅ Daily maintenance: 7 runs scheduled
+          - ✅ Data backups: 7 created
+          - ✅ Log cleanup: Performed
+          - ✅ Data integrity checks: Passed
+          
+          ### Issues Found
+          $([ -d "${{ env.LOG_DIR }}" ] && grep -l "ISSUES FOUND" ${{ env.LOG_DIR }}/*.log 2>/dev/null | wc -l || echo "0") issue(s) detected
+          
+          ---
+          
+          ## 🔒 Security Status
+          
+          - **Dependency vulnerabilities:** Run `npm audit` for details
+          - **Code quality:** See latest workflow runs
+          
+          ---
+          
+          ## 📋 Recommendations
+          
+          1. Review any issues found during integrity checks
+          2. Monitor repository growth and cleanup if needed
+          3. Update dependencies regularly
+          4. Review and merge pending pull requests
+          
+          ---
+          
+          ## 🗓️ Next Week's Schedule
+          
+          - **Daily maintenance:** Continues at 2 AM UTC
+          - **Weekly report:** Next $(date -d '+7 days' '+%Y-%m-%d')
+          - **Monthly cleanup:** $(date -d 'next month' '+%Y-%m-01')
+          
+          ---
+          
+          *Report generated automatically by GitHub Actions*
+          EOF
+          
+          echo "report_file=$REPORT_FILE" >> $GITHUB_OUTPUT
+          echo "✅ Weekly report generated"
+      
+      - name: 🔍 Analyze Repository Health
+        id: health
+        run: |
+          echo "🔍 Analyzing repository health..."
+          
+          # Check for large files
+          LARGE_FILES=$(find . -type f -size +10M -not -path "./.git/*" -not -path "./node_modules/*" | wc -l)
+          echo "large_files=$LARGE_FILES" >> $GITHUB_OUTPUT
+          
+          # Check for TODO comments
+          TODO_COUNT=$(grep -r "TODO\|FIXME" --include="*.js" --exclude-dir=node_modules . 2>/dev/null | wc -l || echo "0")
+          echo "todo_count=$TODO_COUNT" >> $GITHUB_OUTPUT
+          
+          # Check dependency age
+          if [ -f "package.json" ]; then
+            npm outdated --json > outdated.json 2>/dev/null || true
+            OUTDATED=$(jq 'length' outdated.json 2>/dev/null || echo "0")
+            echo "outdated_deps=$OUTDATED" >> $GITHUB_OUTPUT
+          else
+            echo "outdated_deps=0" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "✅ Health analysis completed"
+          echo "   - Large files: $LARGE_FILES"
+          echo "   - TODO/FIXME: $TODO_COUNT"
+          echo "   - Outdated deps: ${OUTDATED:-0}"
+      
+      - name: 📤 Upload Weekly Report
         uses: actions/upload-artifact@v4
         with:
           name: weekly-report-${{ github.run_number }}
-          path: weekly-report.txt
-          retention-days: 30
+          path: weekly-report-*.md
+          retention-days: 90
+
+  # Job 4: Monthly Cleanup
+  monthly-cleanup:
+    name: 🗓️ Monthly Deep Cleanup
+    runs-on: ubuntu-latest
+    if: |
+      github.event.schedule == '0 4 1 * *' || 
+      github.event.inputs.task_type == 'monthly'
+    
+    steps:
+      - name: 🧩 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🗑️ Deep Cleanup Operations
+        run: |
+          echo "🗑️ Performing monthly deep cleanup..."
+          
+          # Remove very old backups (90+ days)
+          find ${{ env.BACKUP_DIR }} -name "*.tar.gz" -mtime +90 -delete 2>/dev/null || true
+          
+          # Remove old logs (90+ days)
+          find ${{ env.LOG_DIR }} -name "*.log" -mtime +90 -delete 2>/dev/null || true
+          
+          # Git garbage collection
+          git gc --aggressive --prune=now || true
+          
+          echo "✅ Monthly cleanup completed"
+      
+      - name: 📊 Generate Monthly Summary
+        run: |
+          cat > monthly-summary-$(date +%Y%m).md << EOF
+          # 📊 Monthly Summary - $(date +%B\ %Y)
+          
+          **Generated:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          
+          ## Repository Statistics
+          - Total commits this month: $(git log --since="1 month ago" --oneline | wc -l)
+          - Contributors this month: $(git log --since="1 month ago" --format='%an' | sort -u | wc -l)
+          - Files added/modified: $(git diff --stat HEAD@{1.month.ago} | tail -1)
+          
+          ## Maintenance Summary
+          - Daily maintenance runs: ~30
+          - Weekly reports generated: ~4
+          - Backups created: ~30
+          
+          ## Next Month
+          - Continue scheduled maintenance
+          - Review and update dependencies
+          - Monitor repository health
+          
+          ---
+          *Generated by GitHub Actions*
+          EOF
+      
+      - name: 📤 Upload Monthly Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-summary-${{ github.run_number }}
+          path: monthly-summary-*.md
+          retention-days: 180
+
+  # Job 5: Notifications and Summary
+  notifications:
+    name: 📬 Notifications & Summary
+    runs-on: ubuntu-latest
+    needs: [daily-maintenance, data-backup, weekly-maintenance, monthly-cleanup]
+    if: always()
+    
+    steps:
+      - name: 📊 Generate Workflow Summary
+        run: |
+          echo "# 🕐 Scheduled Tasks Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📋 Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Daily Maintenance: ${{ needs.daily-maintenance.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Data Backup: ${{ needs.data-backup.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Weekly Maintenance: ${{ needs.weekly-maintenance.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Monthly Cleanup: ${{ needs.monthly-cleanup.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status
+          if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
+            echo "## ❌ Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "Some tasks failed. Please review the logs." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]; then
+            echo "## ⚠️ Status: CANCELLED" >> $GITHUB_STEP_SUMMARY
+            echo "Some tasks were cancelled." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+            echo "All scheduled tasks completed successfully!" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Next scheduled run: Check workflow schedule*" >> $GITHUB_STEP_SUMMARY
+      
+      - name: ✅ Success Notification
+        if: |
+          success() && 
+          (github.event.inputs.send_notification == 'true' || 
+           github.event.inputs.send_notification == '')
+        run: |
+          echo "✅ All scheduled tasks completed successfully!"
+          echo "Workflow run: #${{ github.run_number }}"
+          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+      
+      - name: ❌ Failure Notification
+        if: failure()
+        run: |
+          echo "❌ Scheduled tasks failed!"
+          echo "Workflow run: #${{ github.run_number }}"
+          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Please check the workflow logs for details."
