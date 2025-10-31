@@ -1,28 +1,150 @@
-name: Deploy Docs
+name: 📚 Documentation Deployment
+
 on:
   push:
-    branches: [main]
-    paths: ['README.md']
+    branches:
+      - main
+      - master
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - '*.md'
+  workflow_dispatch:
+
 permissions:
+  contents: write
   pages: write
   id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  deploy:
+  build-documentation:
+    name: Build Documentation
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages-docs
+
     steps:
-      - uses: actions/checkout@v4
-      - name: 🏗 Build Documentation
-        run: |
-          mkdir -p documentation
-          echo '<html><body><h1>Documentation</h1><p>Hello from Docs!</p><a href="../">Back to App</a></body></html>' > documentation/index.html
-      - uses: actions/configure-pages@v4
-      - uses: actions/upload-pages-artifact@v3
+      - name: 🧩 Checkout Repository
+        uses: actions/checkout@v4
         with:
-          path: documentation/
-      - name: 🚀 Deploy Documentation
-        id: deployment
-        uses: actions/deploy-pages@v4
-      - name: 🌐 Show URL
-        run: echo "Docs at: ${{ steps.deployment.outputs.page_url }}"
+          fetch-depth: 0
+
+      - name: ⚙ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 📦 Install Dependencies
+        run: |
+          npm install
+          npm install --save-dev marked highlight.js
+
+      - name: 🏗 Build Documentation Site
+        run: |
+          echo "📝 Generating documentation..."
+          mkdir -p docs/assets/css docs/assets/js
+
+          cat > docs/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Heavens Above - Documentation</title>
+              <style>
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                      line-height: 1.6;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      padding: 20px;
+                  }
+                  .container { max-width: 1000px; margin: auto; background: white; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+                  .header { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 40px; text-align: center; }
+                  .footer { padding: 20px; text-align: center; background: #f8f9fa; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <div class="header">
+                      <h1>🛰 Heavens Above Documentation</h1>
+                      <p>Generated on BUILD_DATE</p>
+                  </div>
+                  <div style="padding:40px;">
+                      <p>Commit: <code>COMMIT_SHA</code> | Branch: <strong>BRANCH_NAME</strong></p>
+                      <p>Welcome to the documentation page for Heavens Above!</p>
+                  </div>
+                  <div class="footer">
+                      <p>🤖 Built automatically via GitHub Actions</p>
+                  </div>
+              </div>
+          </body>
+          </html>
+          EOF
+
+          BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+
+          sed -i "s/BUILD_DATE/$BUILD_DATE/g" docs/index.html
+          sed -i "s/COMMIT_SHA/$COMMIT_SHA/g" docs/index.html
+          sed -i "s/BRANCH_NAME/$BRANCH_NAME/g" docs/index.html
+
+      - name: 📋 Generate README Documentation
+        run: |
+          if [ -f "README.md" ]; then
+            echo "Converting README.md to HTML..."
+            cat > docs/readme.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head><meta charset="UTF-8"><title>README</title></head>
+          <body><pre><code>README_CONTENT</code></pre></body>
+          </html>
+          EOF
+            README_CONTENT=$(cat README.md | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            echo "$README_CONTENT" > /tmp/readme.txt
+            sed -i "/README_CONTENT/r /tmp/readme.txt" docs/readme.html
+            sed -i "/README_CONTENT/d" docs/readme.html
+          fi
+
+      - name: 📝 Generate Build Metadata
+        run: |
+          cat > docs/build-info.json << EOF
+          {
+            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit_sha": "$(git rev-parse HEAD)",
+            "branch": "$(git rev-parse --abbrev-ref HEAD)",
+            "run_number": "${{ github.run_number }}",
+            "actor": "${{ github.actor }}"
+          }
+          EOF
+
+      - name: 📤 Upload Documentation Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-build-${{ github.run_number }}
+          path: docs/
+          retention-days: 30
+
+  deploy-documentation:
+    name: 🚀 Deploy Documentation to /docs
+    needs: build-documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Download Documentation Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation-build-${{ github.run_number }}
+          path: docs/
+
+      # ✅ Use peaceiris/actions-gh-pages to push docs into /docs subfolder on gh-pages
+      - name: 🚀 Deploy to GitHub Pages (/docs)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          destination_dir: docs  # ensures your docs appear at /docs/
