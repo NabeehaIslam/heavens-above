@@ -6,28 +6,73 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: 🧾 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: 🧰 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install dependencies
+      - name: 📦 Install Dependencies
         run: npm install
 
-      - name: Build project
+      - name: 🏗️ Build Project
         run: npm run build
 
-      - name: Deploy project to GitHub Pages (root)
+      - name: 🗂️ Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist
+            build
+            public
+            index.html
+          if-no-files-found: warn
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: 🧾 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📥 Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+        continue-on-error: true
+
+      - name: 🧭 Determine publish directory
+        id: publish-dir
+        run: |
+          if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+            echo "dir=dist" >> $GITHUB_OUTPUT
+            echo "📁 Using dist/ directory"
+          elif [ -d "build" ] && [ "$(ls -A build)" ]; then
+            echo "dir=build" >> $GITHUB_OUTPUT
+            echo "📁 Using build/ directory"
+          elif [ -d "public" ] && [ "$(ls -A public)" ]; then
+            echo "dir=public" >> $GITHUB_OUTPUT
+            echo "📁 Using public/ directory"
+          elif [ -f "index.html" ]; then
+            echo "dir=." >> $GITHUB_OUTPUT
+            echo "📁 Using root directory"
+          else
+            echo "❌ No valid publish directory found!"
+            exit 1
+          fi
+
+      - name: 🚀 Deploy to GitHub Pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ${{ steps.publish-dir.outputs.dir }}
           publish_branch: gh-pages
-          publish_dir: ./dist   # or your project build folder
-          keep_files: true      # 🔥 ensures docs are not overwritten
+          keep_files: true
