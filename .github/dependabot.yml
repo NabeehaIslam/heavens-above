@@ -1,5 +1,10 @@
+# Dependabot Configuration for Automated Dependency Management
+# This file should be placed at: .github/dependabot.yml
+
 version: 2
+
 updates:
+  # NPM Dependencies
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -7,12 +12,148 @@ updates:
       day: "monday"
       time: "00:00"
       timezone: "Asia/Karachi"
+    
+    # Limit number of open PRs
     open-pull-requests-limit: 5
+    
+    # Versioning strategy
+    versioning-strategy: auto
+    
+    # Commit message preferences
     commit-message:
       prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
       include: "scope"
+    
+    # PR labels
     labels:
       - "dependencies"
       - "dependabot"
+      - "automated"
+    
+    # Reviewers (will be requested for review)
     reviewers:
-      - "NabeehaIslam"   # 👈 Add your GitHub username for automatic review requests
+      - "NabeehaIslam"
+    
+    # Assignees
+    assignees:
+      - "NabeehaIslam"
+    
+    # Milestone
+    # milestone: 1
+    
+    # Group updates by type
+    groups:
+      # Group all patch updates together
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+      
+      # Group all minor updates together
+      minor-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+    
+    # Ignore specific dependencies or versions
+    ignore:
+      # Example: Ignore major version updates for specific packages
+      # - dependency-name: "express"
+      #   update-types: ["version-update:semver-major"]
+      
+      # Example: Ignore specific versions
+      # - dependency-name: "lodash"
+      #   versions: ["4.17.x"]
+    
+    # Allow only specific updates
+    allow:
+      # Allow all direct dependencies
+      - dependency-type: "direct"
+      # Allow all indirect dependencies
+      - dependency-type: "indirect"
+      # Allow production dependencies
+      - dependency-type: "production"
+      # Allow development dependencies
+      - dependency-type: "development"
+    
+    # Increase pull request limit for security updates
+    # Security updates are always created regardless of limits
+    
+    # Custom PR body template
+    pull-request-branch-name:
+      separator: "-"
+    
+    # Rebase strategy
+    rebase-strategy: "auto"
+    
+    # Target branch
+    target-branch: "main"
+
+  # GitHub Actions Dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "00:00"
+      timezone: "Asia/Karachi"
+    
+    open-pull-requests-limit: 3
+    
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci"
+    
+    reviewers:
+      - "NabeehaIslam"
+    
+    assignees:
+      - "NabeehaIslam"
+    
+    # Group all GitHub Actions updates
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+# Additional Configuration Notes:
+# 
+# 1. Security Updates:
+#    - Dependabot automatically creates PRs for security vulnerabilities
+#    - These bypass the open-pull-requests-limit
+#    - Priority is given to security updates
+#
+# 2. Versioning Policy:
+#    - Patch updates (x.x.X): Auto-merge safe, bug fixes only
+#    - Minor updates (x.X.x): Review recommended, new features
+#    - Major updates (X.x.x): Careful review required, breaking changes
+#
+# 3. Review Process:
+#    - All PRs automatically assigned to specified reviewers
+#    - Use GitHub's auto-merge feature for trusted updates
+#    - Configure branch protection rules for additional safety
+#
+# 4. Integration with Workflows:
+#    - Works alongside custom dependency update workflows
+#    - Dependabot creates PRs, workflows verify compatibility
+#    - Tests run automatically on all Dependabot PRs
+#
+# 5. Best Practices:
+#    - Review grouped updates together for efficiency
+#    - Keep security updates separate and prioritized
+#    - Use ignore list for packages with known issues
+#    - Monitor Dependabot alerts in Security tab
+#
+# 6. Customization:
+#    - Adjust schedule based on project needs
+#    - Modify labels for better organization
+#    - Set appropriate PR limits for your team
+#    - Configure ignore rules for stability
