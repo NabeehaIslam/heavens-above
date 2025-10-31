@@ -43,12 +43,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
       
       - name: Install Dependencies
         run: |
           echo "📦 Installing dependencies..."
-          npm ci
+          npm install
           echo "✅ Dependencies installed"
       
       - name: Analyze Dependencies for Vulnerabilities
