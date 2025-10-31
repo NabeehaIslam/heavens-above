@@ -10,18 +10,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment:
-      name: github-pages
+      name: github-pages-docs
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir -p docs && echo '<html><body><h1>Docs</h1><p>Hello World</p></body></html>' > docs/index.html
+      - run: |
+          mkdir -p documentation
+          echo '<html><body><h1>Documentation</h1><p>Hello from Docs!</p><a href="../">Back to App</a></body></html>' > documentation/index.html
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/
-      - name: 🚀 Deploy to GitHub Pages
+          path: documentation/
+      - name: 🚀 Deploy Documentation
         id: deployment
         uses: actions/deploy-pages@v4
-      
-      - name: 🌐 Show Deployment URL
-        run: |
-          echo "Your documentation is live at: ${{ steps.deployment.outputs.page_url }}"
+      - name: 🌐 Show URL
+        run: echo "Docs at: ${{ steps.deployment.outputs.page_url }}"
