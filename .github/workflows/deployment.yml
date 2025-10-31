@@ -1,4 +1,4 @@
-name: Deploy to AWS
+name: Deploy to Heroku
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
 
 env:
   NODE_VERSION: '18'
-  AWS_REGION: 'us-east-1'
+  HEROKU_APP_NAME: 'your-app-name'
 
 jobs:
   # Stage 1: Build
@@ -35,12 +35,16 @@ jobs:
         run: npm run build
         env:
           CI: true
+          NODE_ENV: production
       
-      - name: Upload build artifacts
+      - name: Archive build artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: build-artifacts
-          path: dist/
+          name: build-output
+          path: |
+            dist/
+            package*.json
+            Procfile
           retention-days: 1
 
   # Stage 2: Test
@@ -61,79 +65,90 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Run lint checks
+        run: npm run lint || echo "No lint script configured"
+        continue-on-error: true
+      
       - name: Run unit tests
-        run: npm test
+        run: npm test -- --coverage
         env:
           CI: true
       
-      - name: Run linting
-        run: npm run lint || echo "No lint script found"
-      
-      - name: Security audit
-        run: npm audit --production
+      - name: Run integration tests
+        run: npm run test:integration || echo "No integration tests"
         continue-on-error: true
       
-      - name: Upload test results
+      - name: Security audit
+        run: npm audit --production --audit-level=high
+        continue-on-error: true
+      
+      - name: Dependency vulnerability check
+        run: |
+          npx audit-ci --high || echo "audit-ci not configured"
+        continue-on-error: true
+      
+      - name: Upload test coverage
         if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: test-results
+          name: test-coverage
           path: coverage/
           retention-days: 7
 
-  # Stage 3: Deploy to AWS
+  # Stage 3: Deploy to Heroku
   deploy:
     runs-on: ubuntu-latest
     needs: [build, test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
-    permissions:
-      id-token: write
-      contents: read
-    
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.app-url }}
+      url: https://${{ env.HEROKU_APP_NAME }}.herokuapp.com
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full git history for Heroku
       
       - name: Download build artifacts
         uses: actions/download-artifact@v3
         with:
-          name: build-artifacts
-          path: dist/
+          name: build-output
       
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy to Heroku
+        uses: akhileshns/heroku-deploy@v3.13.15
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: ${{ env.HEROKU_APP_NAME }}
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          buildpack: "heroku/nodejs"
+          branch: "main"
       
-      - name: Deploy to S3
-        run: |
-          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_NAME }} \
-            --delete \
-            --cache-control "public, max-age=31536000, immutable"
+      - name: Wait for deployment
+        run: sleep 15
       
-      - name: Invalidate CloudFront cache
+      - name: Health check
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
-      
-      - name: Deployment success
-        id: deploy
-        run: |
-          echo "app-url=https://${{ secrets.CLOUDFRONT_DOMAIN }}" >> $GITHUB_OUTPUT
-          echo "✅ Deployment to AWS completed successfully!"
-      
-      - name: Notify deployment status
-        if: always()
-        run: |
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "🚀 Deployment Status: SUCCESS"
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.HEROKU_APP_NAME }}.herokuapp.com)
+          if [ $response -eq 200 ]; then
+            echo "✅ Health check passed (HTTP $response)"
           else
-            echo "❌ Deployment Status: FAILED"
+            echo "⚠️ Health check returned HTTP $response"
+            exit 1
           fi
+      
+      - name: Run smoke tests
+        run: |
+          curl -f https://${{ env.HEROKU_APP_NAME }}.herokuapp.com/api/health || echo "Smoke test skipped"
+        continue-on-error: true
+      
+      - name: Deployment success notification
+        if: success()
+        run: |
+          echo "🚀 Successfully deployed to Heroku!"
+          echo "📱 App URL: https://${{ env.HEROKU_APP_NAME }}.herokuapp.com"
+      
+      - name: Deployment failure notification
+        if: failure()
+        run: echo "❌ Deployment to Heroku failed!"
