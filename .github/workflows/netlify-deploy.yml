@@ -1,112 +1,52 @@
-name: 📚 Documentation Deployment
+name: Deploy Documentation to Netlify
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
     paths:
-      - 'docs/'
-      - 'README.md'
-      - '*.md'
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/deploy-docs.yml'
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
-  build-documentation:
-    name: Build Documentation
+  build-and-deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: 🧩 Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: ⚙ Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: 📦 Install Dependencies
-        run: |
-          npm install
-          npm install --save-dev marked highlight.js
-
-      - name: 🏗 Build Documentation Site
-        run: |
-          echo "📝 Generating documentation..."
-          mkdir -p docs/assets/css docs/assets/js
-          # (rest of your build script unchanged)
-          # ...
-          echo "✅ Documentation built successfully!"
-
-      - name: 📋 Generate README Documentation
-        run: |
-          # (your existing README conversion script here)
-
-      - name: 🔍 Validate Documentation Build
-        run: |
-          if [ ! -f "docs/index.html" ]; then
-            echo "❌ index.html not found!"
-            exit 1
-          fi
-          echo "✅ Documentation validation passed"
-
-      - name: 📝 Generate Build Metadata
-        run: |
-          cat > docs/build-info.json << EOF
-          {
-            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "commit_sha": "$(git rev-parse HEAD)",
-            "branch": "$(git rev-parse --abbrev-ref HEAD)"
-          }
-          EOF
-
-      - name: 📤 Upload Documentation Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: documentation-build-${{ github.run_number }}
-          path: docs/
-          retention-days: 30
-
-      - name: 📋 Create Build Summary
-        run: |
-          echo "# 📚 Documentation Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Build successful!" >> $GITHUB_STEP_SUMMARY
-
-  deploy-netlify:
-    name: 🚀 Deploy to Netlify
-    needs: build-documentation
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Download Documentation Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: documentation-build-${{ github.run_number }}
-          path: docs/
-
-      - name: 🔧 Install Netlify CLI
-        run: npm install -g netlify-cli
-
-      - name: 🚀 Deploy to Netlify
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: |
-          netlify deploy --dir=docs --prod --message "Docs build ${{ github.run_number }}"
-
-      - name: ✅ Deployment Summary
-        run: |
-          echo "# 🚀 Netlify Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
-          echo "📅 $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" >> $GITHUB_STEP_SUMMARY
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        
+    - name: Install dependencies
+      run: |
+        pip install mkdocs
+        pip install mkdocs-material
+        # Add other documentation dependencies here
+        
+    - name: Build documentation
+      run: mkdocs build
+      # Or use your specific build command:
+      # run: sphinx-build -b html docs/source docs/build
+      
+    - name: Upload build artifacts
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./site  # Change to your build directory
+        
+    - name: Deploy to Netlify
+      uses: nwtgck/actions-netlify@v3
+      with:
+        publish-dir: './site'  # Your build output directory
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        deploy-message: "Deploy from GitHub Actions"
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
