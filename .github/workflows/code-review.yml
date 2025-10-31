@@ -2,25 +2,42 @@ name: 🕵️ Code Review Workflow
 
 on:
   push:
-    branches: [ "main" ]
+    branches: 
+      - main
+      - master
   pull_request:
-    branches: [ "main" ]
+    branches: 
+      - main
+      - master
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  security-events: write
+  statuses: write
+  checks: write
 
 jobs:
-  code_review:
-    name: 🔍 Automated Code Review
+  # Job 1: Coding Standards Check
+  coding_standards:
+    name: 📋 Coding Standards Check
     runs-on: ubuntu-latest
-
+    if: github.event_name == 'pull_request'
+    
     steps:
-      - name: Checkout Repository
+      - name: 🧩 Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
+        with:
+          fetch-depth: 0
+      
+      - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-
-      - name: Install Dependencies
+          node-version: '18'
+      
+      - name: 📦 Install Dependencies
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -29,42 +46,517 @@ jobs:
           else
             npm install
           fi
-
-      - name: Run Linter (ESLint)
+      
+      - name: 🔧 Install Linting Tools
         run: |
-          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
-            npx eslint . --ext .js,.jsx,.ts,.tsx || true
-          else
-            echo "⚠️ No ESLint configuration found."
+          echo "Installing ESLint and Prettier..."
+          npm install --save-dev eslint prettier eslint-config-prettier eslint-plugin-prettier
+      
+      - name: 🎨 Run ESLint (Code Standards)
+        id: eslint
+        continue-on-error: true
+        run: |
+          echo "Running ESLint..."
+          mkdir -p reports
+          
+          # Create basic ESLint config if not exists
+          if [ ! -f .eslintrc.js ] && [ ! -f .eslintrc.json ] && [ ! -f .eslintrc.yml ]; then
+            cat > .eslintrc.json << 'EOF'
+          {
+            "env": {
+              "node": true,
+              "es2021": true
+            },
+            "extends": "eslint:recommended",
+            "parserOptions": {
+              "ecmaVersion": 12
+            },
+            "rules": {
+              "indent": ["error", 2],
+              "linebreak-style": ["error", "unix"],
+              "quotes": ["error", "single"],
+              "semi": ["error", "always"],
+              "no-unused-vars": "warn",
+              "no-console": "off"
+            }
+          }
+          EOF
           fi
+          
+          # Run ESLint and save results
+          npx eslint . --ext .js,.jsx,.ts,.tsx --format json --output-file reports/eslint-report.json || true
+          npx eslint . --ext .js,.jsx,.ts,.tsx --format stylish > reports/eslint-output.txt || true
+          
+          # Count issues
+          ERROR_COUNT=$(jq '[.[] | .errorCount] | add // 0' reports/eslint-report.json)
+          WARNING_COUNT=$(jq '[.[] | .warningCount] | add // 0' reports/eslint-report.json)
+          
+          echo "eslint_errors=$ERROR_COUNT" >> $GITHUB_OUTPUT
+          echo "eslint_warnings=$WARNING_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "✅ ESLint completed: $ERROR_COUNT errors, $WARNING_COUNT warnings"
+      
+      - name: 📏 Check Code Formatting (Prettier)
+        id: prettier
+        continue-on-error: true
+        run: |
+          echo "Checking code formatting..."
+          
+          # Create Prettier config if not exists
+          if [ ! -f .prettierrc ]; then
+            cat > .prettierrc << 'EOF'
+          {
+            "semi": true,
+            "trailingComma": "es5",
+            "singleQuote": true,
+            "printWidth": 100,
+            "tabWidth": 2
+          }
+          EOF
+          fi
+          
+          # Check formatting
+          npx prettier --check "**/*.{js,jsx,ts,tsx,json,css,md}" > reports/prettier-report.txt 2>&1 || true
+          
+          UNFORMATTED=$(cat reports/prettier-report.txt | grep -c "Code style issues" || echo "0")
+          echo "unformatted_files=$UNFORMATTED" >> $GITHUB_OUTPUT
+          
+          echo "✅ Prettier check completed"
+      
+      - name: 📊 Generate Standards Report
+        run: |
+          cat > reports/standards-summary.md << EOF
+          # 📋 Coding Standards Report
+          
+          ## ESLint Results
+          - **Errors:** ${{ steps.eslint.outputs.eslint_errors }}
+          - **Warnings:** ${{ steps.eslint.outputs.eslint_warnings }}
+          
+          ## Code Formatting
+          - **Unformatted Files:** ${{ steps.prettier.outputs.unformatted_files }}
+          
+          ## Status
+          $([ ${{ steps.eslint.outputs.eslint_errors }} -eq 0 ] && echo "✅ No critical issues found" || echo "⚠️ Action required: Fix errors before merging")
+          
+          ---
+          *Generated by GitHub Actions*
+          EOF
+      
+      - name: 📤 Upload Standards Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coding-standards-report
+          path: reports/
+          retention-days: 30
 
+  # Job 2: Code Quality Metrics
+  code_quality:
+    name: 📊 Code Quality Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🧩 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: 📦 Install Dependencies
+        run: npm install || echo "No dependencies to install"
+      
+      - name: 🔍 Install Code Quality Tools
+        run: |
+          npm install --save-dev jscpd plato complexity-report
+      
+      - name: 📈 Analyze Code Complexity
+        id: complexity
+        run: |
+          echo "Analyzing code complexity..."
+          mkdir -p reports/complexity
+          
+          # Find all JS files
+          JS_FILES=$(find . -name "*.js" -not -path "./node_modules/*" -not -path "./.git/*")
+          
+          if [ -z "$JS_FILES" ]; then
+            echo "No JavaScript files found"
+            echo "file_count=0" >> $GITHUB_OUTPUT
+            echo "avg_complexity=0" >> $GITHUB_OUTPUT
+          else
+            FILE_COUNT=$(echo "$JS_FILES" | wc -l)
+            echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
+            
+            # Calculate lines of code
+            TOTAL_LINES=$(cat $JS_FILES 2>/dev/null | wc -l || echo "0")
+            echo "total_lines=$TOTAL_LINES" >> $GITHUB_OUTPUT
+            
+            # Calculate average complexity (simplified)
+            AVG_COMPLEXITY=$((TOTAL_LINES / FILE_COUNT))
+            echo "avg_complexity=$AVG_COMPLEXITY" >> $GITHUB_OUTPUT
+            
+            echo "✅ Complexity analysis completed"
+          fi
+      
+      - name: 🔄 Check Code Duplication
+        id: duplication
+        run: |
+          echo "Checking for code duplication..."
+          
+          npx jscpd . --ignore "node_modules/**,dist/**,build/**" --format json --output reports/duplication.json || true
+          
+          if [ -f reports/duplication.json ]; then
+            DUPLICATION=$(jq '.statistics.total.percentage // 0' reports/duplication.json)
+            echo "duplication_percentage=$DUPLICATION" >> $GITHUB_OUTPUT
+            echo "✅ Duplication check: $DUPLICATION%"
+          else
+            echo "duplication_percentage=0" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: 📝 Calculate Maintainability Index
+        id: maintainability
+        run: |
+          echo "Calculating maintainability metrics..."
+          
+          # Simple maintainability calculation based on:
+          # - Lines of code
+          # - Code duplication
+          # - File count
+          
+          LINES=${{ steps.complexity.outputs.total_lines }}
+          FILES=${{ steps.complexity.outputs.file_count }}
+          DUPLICATION=${{ steps.duplication.outputs.duplication_percentage }}
+          
+          if [ $FILES -eq 0 ]; then
+            MAINTAINABILITY=100
+          else
+            # Simplified maintainability score (0-100)
+            AVG_FILE_SIZE=$((LINES / FILES))
+            SCORE=$((100 - (AVG_FILE_SIZE / 10) - DUPLICATION))
+            MAINTAINABILITY=$((SCORE > 0 ? SCORE : 0))
+          fi
+          
+          echo "maintainability_score=$MAINTAINABILITY" >> $GITHUB_OUTPUT
+          echo "✅ Maintainability Index: $MAINTAINABILITY/100"
+      
+      - name: 📊 Generate Quality Metrics Report
+        run: |
+          cat > reports/quality-metrics.md << EOF
+          # 📊 Code Quality Metrics Report
+          
+          ## Overview
+          - **Total Files:** ${{ steps.complexity.outputs.file_count }}
+          - **Total Lines:** ${{ steps.complexity.outputs.total_lines }}
+          - **Average Complexity:** ${{ steps.complexity.outputs.avg_complexity }} lines/file
+          
+          ## Quality Indicators
+          - **Code Duplication:** ${{ steps.duplication.outputs.duplication_percentage }}%
+          - **Maintainability Index:** ${{ steps.maintainability.outputs.maintainability_score }}/100
+          
+          ## Recommendations
+          $([ ${{ steps.maintainability.outputs.maintainability_score }} -lt 50 ] && echo "⚠️ Low maintainability - Consider refactoring" || echo "✅ Good maintainability")
+          $([ $(echo "${{ steps.duplication.outputs.duplication_percentage }} > 5" | bc -l) -eq 1 ] && echo "⚠️ High code duplication detected" || echo "✅ Low code duplication")
+          
+          ---
+          *Generated by GitHub Actions*
+          EOF
+      
+      - name: 📤 Upload Quality Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-report
+          path: reports/
+          retention-days: 30
+
+  # Job 3: Security Vulnerability Scanning
   security_scan:
-    name: 🔐 CodeQL Security Scan
+    name: 🔐 Security Vulnerability Scan
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
       security-events: write
-
+    
     steps:
-      - name: Checkout repository
+      - name: 🧩 Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
+      
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: 🔍 NPM Security Audit
+        id: npm_audit
+        continue-on-error: true
+        run: |
+          echo "Running npm security audit..."
+          mkdir -p reports
+          
+          npm audit --json > reports/npm-audit.json || true
+          
+          if [ -f reports/npm-audit.json ]; then
+            CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' reports/npm-audit.json)
+            HIGH=$(jq '.metadata.vulnerabilities.high // 0' reports/npm-audit.json)
+            MODERATE=$(jq '.metadata.vulnerabilities.moderate // 0' reports/npm-audit.json)
+            LOW=$(jq '.metadata.vulnerabilities.low // 0' reports/npm-audit.json)
+            
+            echo "critical_vulns=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high_vulns=$HIGH" >> $GITHUB_OUTPUT
+            echo "moderate_vulns=$MODERATE" >> $GITHUB_OUTPUT
+            echo "low_vulns=$LOW" >> $GITHUB_OUTPUT
+            
+            echo "🔒 Security Audit: Critical=$CRITICAL, High=$HIGH, Moderate=$MODERATE, Low=$LOW"
+          fi
+      
+      - name: 🛡️ Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: javascript
-
-      - name: Perform CodeQL Analysis
+      
+      - name: 🔬 Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-
-  enforce_merge:
-    name: 🚫 Enforce Merge Policy
-    runs-on: ubuntu-latest
-    needs: [code_review, security_scan]
-
-    steps:
-      - name: Check review status
+        with:
+          category: "/language:javascript"
+      
+      - name: 📋 Generate Security Report
         run: |
-          echo "Checking merge conditions..."
-          echo "✅ Code review checks passed successfully."
+          cat > reports/security-summary.md << EOF
+          # 🔐 Security Vulnerability Report
+          
+          ## NPM Audit Results
+          - 🔴 **Critical:** ${{ steps.npm_audit.outputs.critical_vulns }}
+          - 🟠 **High:** ${{ steps.npm_audit.outputs.high_vulns }}
+          - 🟡 **Moderate:** ${{ steps.npm_audit.outputs.moderate_vulns }}
+          - 🟢 **Low:** ${{ steps.npm_audit.outputs.low_vulns }}
+          
+          ## CodeQL Analysis
+          - Static code analysis completed
+          - Results available in Security tab
+          
+          ## Security Status
+          $([ ${{ steps.npm_audit.outputs.critical_vulns }} -eq 0 ] && echo "✅ No critical vulnerabilities" || echo "🚨 CRITICAL: Immediate action required!")
+          $([ ${{ steps.npm_audit.outputs.high_vulns }} -eq 0 ] && echo "✅ No high vulnerabilities" || echo "⚠️ High vulnerabilities detected")
+          
+          ## Recommendations
+          - Review and update dependencies with known vulnerabilities
+          - Run \`npm audit fix\` to automatically fix issues
+          - Check CodeQL results in the Security tab
+          
+          ---
+          *Generated by GitHub Actions*
+          EOF
+      
+      - name: 📤 Upload Security Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-report
+          path: reports/
+          retention-days: 30
+
+  # Job 4: Pull Request Feedback
+  pr_feedback:
+    name: 💬 PR Feedback & Comments
+    runs-on: ubuntu-latest
+    needs: [coding_standards, code_quality, security_scan]
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: 📥 Download All Reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports/
+      
+      - name: 📝 Generate Comprehensive Review Comment
+        id: generate_comment
+        run: |
+          # Combine all reports
+          COMMENT="## 🤖 Automated Code Review Results\n\n"
+          COMMENT+="**Review Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')\n"
+          COMMENT+="**Commit:** \`${{ github.sha }}\`\n\n"
+          
+          COMMENT+="---\n\n"
+          
+          # Add standards report
+          if [ -f all-reports/coding-standards-report/standards-summary.md ]; then
+            COMMENT+="$(cat all-reports/coding-standards-report/standards-summary.md)\n\n"
+          fi
+          
+          # Add quality report
+          if [ -f all-reports/code-quality-report/quality-metrics.md ]; then
+            COMMENT+="$(cat all-reports/code-quality-report/quality-metrics.md)\n\n"
+          fi
+          
+          # Add security report
+          if [ -f all-reports/security-scan-report/security-summary.md ]; then
+            COMMENT+="$(cat all-reports/security-scan-report/security-summary.md)\n\n"
+          fi
+          
+          COMMENT+="---\n"
+          COMMENT+="### 📋 Next Steps\n"
+          COMMENT+="1. Review all reported issues\n"
+          COMMENT+="2. Fix critical and high-priority items\n"
+          COMMENT+="3. Request re-review after fixes\n\n"
+          
+          COMMENT+="*This automated review helps maintain code quality. Human review is still required.*"
+          
+          # Save to file
+          echo -e "$COMMENT" > review-comment.md
+      
+      - name: 💬 Post Review Comment to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('review-comment.md', 'utf8');
+            
+            // Find existing bot comments
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🤖 Automated Code Review Results')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+              console.log('✅ Updated existing review comment');
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+              console.log('✅ Posted new review comment');
+            }
+
+  # Job 5: Enforce Merge Requirements
+  enforce_merge_policy:
+    name: 🚦 Enforce Merge Policy
+    runs-on: ubuntu-latest
+    needs: [coding_standards, code_quality, security_scan]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: 📥 Download Reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports/
+      
+      - name: 🔍 Evaluate Merge Criteria
+        id: evaluate
+        run: |
+          echo "🔍 Evaluating merge criteria..."
+          
+          # Initialize status
+          CAN_MERGE=true
+          ISSUES=""
+          
+          # Check ESLint errors (if report exists)
+          if [ -f reports/coding-standards-report/eslint-report.json ]; then
+            ERRORS=$(jq '[.[] | .errorCount] | add // 0' reports/coding-standards-report/eslint-report.json)
+            if [ $ERRORS -gt 0 ]; then
+              CAN_MERGE=false
+              ISSUES="$ISSUES\n- ❌ ESLint errors found: $ERRORS"
+            else
+              ISSUES="$ISSUES\n- ✅ No ESLint errors"
+            fi
+          fi
+          
+          # Check security vulnerabilities (if report exists)
+          if [ -f reports/security-scan-report/npm-audit.json ]; then
+            CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' reports/security-scan-report/npm-audit.json)
+            HIGH=$(jq '.metadata.vulnerabilities.high // 0' reports/security-scan-report/npm-audit.json)
+            
+            if [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ]; then
+              CAN_MERGE=false
+              ISSUES="$ISSUES\n- ❌ Critical/High vulnerabilities: $CRITICAL critical, $HIGH high"
+            else
+              ISSUES="$ISSUES\n- ✅ No critical vulnerabilities"
+            fi
+          fi
+          
+          echo "can_merge=$CAN_MERGE" >> $GITHUB_OUTPUT
+          echo -e "issues=$ISSUES" >> $GITHUB_OUTPUT
+          
+          if [ "$CAN_MERGE" = true ]; then
+            echo "✅ All merge criteria met"
+          else
+            echo "❌ Merge criteria not met"
+          fi
+      
+      - name: 🚦 Set Commit Status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const canMerge = '${{ steps.evaluate.outputs.can_merge }}' === 'true';
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: canMerge ? 'success' : 'failure',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: canMerge ? 'All checks passed' : 'Review required - Fix issues before merging',
+              context: 'Code Review / Merge Policy'
+            });
+      
+      - name: ✅ Merge Policy Result
+        run: |
+          echo "# 🚦 Merge Policy Enforcement" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Status: ${{ steps.evaluate.outputs.can_merge == 'true' && '✅ PASSED' || '❌ BLOCKED' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Evaluation Results" >> $GITHUB_STEP_SUMMARY
+          echo -e "${{ steps.evaluate.outputs.issues }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.evaluate.outputs.can_merge }}" = "false" ]; then
+            echo "## ⚠️ Action Required" >> $GITHUB_STEP_SUMMARY
+            echo "This PR cannot be merged until all issues are resolved." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "## 🎉 Ready to Merge" >> $GITHUB_STEP_SUMMARY
+            echo "All automated checks have passed. Human review may still be required." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Job 6: Summary Report
+  final_summary:
+    name: 📋 Generate Final Summary
+    runs-on: ubuntu-latest
+    needs: [coding_standards, code_quality, security_scan]
+    if: always()
+    
+    steps:
+      - name: 📊 Create Workflow Summary
+        run: |
+          echo "# 📊 Code Review Workflow - Final Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Coding Standards: ${{ needs.coding_standards.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Quality: ${{ needs.code_quality.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Scan: ${{ needs.security_scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*All reports are available in the workflow artifacts.*" >> $GITHUB_STEP_SUMMARY
