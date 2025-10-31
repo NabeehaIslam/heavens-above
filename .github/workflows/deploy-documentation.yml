@@ -18,4 +18,10 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
-      - uses: actions/deploy-pages@v4
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+      
+      - name: 🌐 Show Deployment URL
+        run: |
+          echo "Your documentation is live at: ${{ steps.deployment.outputs.page_url }}"
