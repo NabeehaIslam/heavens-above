@@ -1,460 +1,61 @@
-name: 📚 Documentation Deployment
+name: 📘 Deploy Documentation
 
 on:
   push:
-    branches: 
+    branches:
       - main
-      - master
     paths:
       - 'docs/**'
-      - 'README.md'
-      - '*.md'
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
-# Allow only one concurrent deployment
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  build-documentation:
-    name: Build Documentation
+  build-docs:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: 🧩 Checkout Repository
+      - name: 🧾 Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for version info
-      
-      - name: ⚙️ Setup Node.js
+
+      - name: 🧰 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      
-      - name: 📦 Install Dependencies
+          node-version: 18
+
+      - name: 📦 Install Docs Dependencies
         run: |
+          cd docs
           npm install
-          # Install documentation generation tools
-          npm install --save-dev marked highlight.js
-      
-      - name: 🏗️ Build Documentation Site
+
+      - name: 🏗️ Build Docs
         run: |
-          echo "📝 Generating documentation from source files..."
-          
-          # Create docs directory structure
-          mkdir -p docs/assets/css
-          mkdir -p docs/assets/js
-          
-          # Generate main documentation page
-          cat > docs/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Heavens Above - Documentation</title>
-              <style>
-                  * { margin: 0; padding: 0; box-sizing: border-box; }
-                  body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                      line-height: 1.6;
-                      color: #333;
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      min-height: 100vh;
-                      padding: 20px;
-                  }
-                  .container {
-                      max-width: 1200px;
-                      margin: 0 auto;
-                      background: white;
-                      border-radius: 10px;
-                      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                      overflow: hidden;
-                  }
-                  .header {
-                      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                      color: white;
-                      padding: 40px;
-                      text-align: center;
-                  }
-                  .header h1 {
-                      font-size: 2.5em;
-                      margin-bottom: 10px;
-                  }
-                  .header p {
-                      font-size: 1.2em;
-                      opacity: 0.9;
-                  }
-                  .content {
-                      padding: 40px;
-                  }
-                  .section {
-                      margin-bottom: 40px;
-                  }
-                  .section h2 {
-                      color: #2a5298;
-                      margin-bottom: 20px;
-                      padding-bottom: 10px;
-                      border-bottom: 3px solid #667eea;
-                  }
-                  .section h3 {
-                      color: #555;
-                      margin: 20px 0 10px 0;
-                  }
-                  .code-block {
-                      background: #f4f4f4;
-                      border-left: 4px solid #667eea;
-                      padding: 15px;
-                      margin: 10px 0;
-                      border-radius: 4px;
-                      overflow-x: auto;
-                  }
-                  .code-block code {
-                      font-family: 'Courier New', monospace;
-                      font-size: 0.9em;
-                  }
-                  .badge {
-                      display: inline-block;
-                      padding: 5px 10px;
-                      background: #667eea;
-                      color: white;
-                      border-radius: 4px;
-                      font-size: 0.85em;
-                      margin: 5px 5px 5px 0;
-                  }
-                  .version-info {
-                      background: #f8f9fa;
-                      padding: 20px;
-                      border-radius: 8px;
-                      margin: 20px 0;
-                  }
-                  .footer {
-                      background: #f8f9fa;
-                      padding: 20px;
-                      text-align: center;
-                      color: #666;
-                      border-top: 1px solid #ddd;
-                  }
-                  .nav-links {
-                      display: flex;
-                      gap: 20px;
-                      flex-wrap: wrap;
-                      margin: 20px 0;
-                  }
-                  .nav-link {
-                      flex: 1;
-                      min-width: 200px;
-                      padding: 20px;
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      color: white;
-                      text-decoration: none;
-                      border-radius: 8px;
-                      text-align: center;
-                      transition: transform 0.2s;
-                  }
-                  .nav-link:hover {
-                      transform: translateY(-5px);
-                  }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <div class="header">
-                      <h1>🛰️ Heavens Above Documentation</h1>
-                      <p>Scripts for scraping the Heavens Above website</p>
-                      <div style="margin-top: 20px;">
-                          <span class="badge">Node.js</span>
-                          <span class="badge">Web Scraping</span>
-                          <span class="badge">Satellite Data</span>
-                      </div>
-                  </div>
-                  
-                  <div class="content">
-                      <div class="version-info">
-                          <strong>📅 Documentation Built:</strong> BUILD_DATE<br>
-                          <strong>🔖 Commit:</strong> <code>COMMIT_SHA</code><br>
-                          <strong>🌿 Branch:</strong> BRANCH_NAME
-                      </div>
-                      
-                      <div class="section">
-                          <h2>📖 Overview</h2>
-                          <p>This project is a web scraper for the Heavens Above website, designed to collect satellite transit information. Built with Node.js, it automates the process of gathering and storing satellite pass data.</p>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>🚀 Quick Start</h2>
-                          <h3>Prerequisites</h3>
-                          <ul>
-                              <li>Node.js 12.10.0 or later (for Promise.allSettled support)</li>
-                              <li>npm package manager</li>
-                              <li>Git</li>
-                          </ul>
-                          
-                          <h3>Installation</h3>
-                          <div class="code-block">
-                              <code># Clone the repository<br>
-                              git clone https://github.com/stevenjoezhang/heavens-above.git<br><br>
-                              
-                              # Navigate to directory<br>
-                              cd heavens-above<br><br>
-                              
-                              # Install dependencies<br>
-                              npm install<br><br>
-                              
-                              # Run the scraper<br>
-                              node run.js</code>
-                          </div>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>📁 Project Structure</h2>
-                          <div class="code-block">
-                              <code>heavens-above/<br>
-                              ├── public/           # Web interface<br>
-                              │   ├── data/        # Scraped data storage<br>
-                              │   └── index.html   # View data interface<br>
-                              ├── run.js           # Main scraper script<br>
-                              ├── package.json     # Project dependencies<br>
-                              └── README.md        # Project documentation</code>
-                          </div>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>⚙️ Configuration</h2>
-                          <p>The scraper stores data in the <code>public/data</code> directory. Access the web interface at <code>public/index.html</code> through a web server to view the collected data.</p>
-                          
-                          <h3>Automated Updates</h3>
-                          <p>For continuous data updates, add the scraper to your crontab:</p>
-                          <div class="code-block">
-                              <code># Run weekly<br>
-                              0 0 * * 0 cd /path/to/heavens-above && node run.js<br><br>
-                              
-                              # Run monthly<br>
-                              0 0 1 * * cd /path/to/heavens-above && node run.js</code>
-                          </div>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>🔧 API Reference</h2>
-                          <h3>Main Script</h3>
-                          <p><strong>run.js</strong> - Main execution script that orchestrates the scraping process</p>
-                          <p>The script uses Promise.allSettled to handle multiple concurrent scraping operations efficiently.</p>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>📚 Additional Resources</h2>
-                          <div class="nav-links">
-                              <a href="https://github.com/stevenjoezhang/heavens-above" class="nav-link">
-                                  📦 GitHub Repository
-                              </a>
-                              <a href="https://github.com/stevenjoezhang/heavens-above/issues" class="nav-link">
-                                  🐛 Report Issues
-                              </a>
-                              <a href="https://www.heavens-above.com" class="nav-link">
-                                  🌐 Heavens Above Website
-                              </a>
-                          </div>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>⚠️ Important Notes</h2>
-                          <ul>
-                              <li><strong>Browser Support:</strong> This project does not support Internet Explorer</li>
-                              <li><strong>Node.js Version:</strong> Requires Node.js 12.10.0+ for Promise.allSettled</li>
-                              <li><strong>Data Storage:</strong> All scraped data is stored locally in the public/data directory</li>
-                          </ul>
-                      </div>
-                      
-                      <div class="section">
-                          <h2>📄 License</h2>
-                          <p>This project is released under the GNU General Public License v3.0</p>
-                          <p><a href="http://www.gnu.org/licenses/gpl-3.0.html">View License</a></p>
-                      </div>
-                  </div>
-                  
-                  <div class="footer">
-                      <p>🤖 Documentation automatically generated and deployed via GitHub Actions</p>
-                      <p style="margin-top: 10px;">Last updated: BUILD_DATE</p>
-                  </div>
-              </div>
-          </body>
-          </html>
-          EOF
-          
-          # Replace placeholders with actual values
-          BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          COMMIT_SHA=$(git rev-parse --short HEAD)
-          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
-          
-          sed -i "s/BUILD_DATE/$BUILD_DATE/g" docs/index.html
-          sed -i "s/COMMIT_SHA/$COMMIT_SHA/g" docs/index.html
-          sed -i "s/BRANCH_NAME/$BRANCH_NAME/g" docs/index.html
-          
-          echo "✅ Documentation built successfully!"
-      
-      - name: 📋 Generate README Documentation
-        run: |
-          # Convert README.md to HTML if it exists
-          if [ -f "README.md" ]; then
-            echo "Converting README.md to HTML..."
-            
-            cat > docs/readme.html << 'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>README - Heavens Above</title>
-              <style>
-                  body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                      line-height: 1.6;
-                      max-width: 900px;
-                      margin: 0 auto;
-                      padding: 20px;
-                      background: #f5f5f5;
-                  }
-                  .readme-container {
-                      background: white;
-                      padding: 40px;
-                      border-radius: 8px;
-                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                  }
-                  pre {
-                      background: #f4f4f4;
-                      padding: 15px;
-                      border-radius: 4px;
-                      overflow-x: auto;
-                  }
-                  code {
-                      background: #f4f4f4;
-                      padding: 2px 6px;
-                      border-radius: 3px;
-                      font-family: 'Courier New', monospace;
-                  }
-              </style>
-          </head>
-          <body>
-              <div class="readme-container">
-                  <a href="index.html">← Back to Documentation</a>
-                  <h1>README</h1>
-                  <pre><code>README_CONTENT</code></pre>
-              </div>
-          </body>
-          </html>
-          EOF
-            
-            # Escape the README content and insert it
-            README_CONTENT=$(cat README.md | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-            # Using a temp file to avoid sed issues with special characters
-            echo "$README_CONTENT" > /tmp/readme_content.txt
-            sed -i "/README_CONTENT/r /tmp/readme_content.txt" docs/readme.html
-            sed -i "/README_CONTENT/d" docs/readme.html
-            
-            echo "✅ README converted to HTML"
-          else
-            echo "⚠️ No README.md found"
-          fi
-      
-      - name: 🔍 Validate Documentation Build
-        run: |
-          echo "🔍 Validating documentation build..."
-          
-          # Check if index.html exists
-          if [ ! -f "docs/index.html" ]; then
-            echo "❌ Error: index.html not found!"
-            exit 1
-          fi
-          
-          # Check file size
-          FILE_SIZE=$(stat -f%z "docs/index.html" 2>/dev/null || stat -c%s "docs/index.html")
-          if [ $FILE_SIZE -lt 100 ]; then
-            echo "❌ Error: index.html is too small ($FILE_SIZE bytes)"
-            exit 1
-          fi
-          
-          echo "✅ Documentation validation passed"
-          echo "📊 Documentation size: $FILE_SIZE bytes"
-      
-      - name: 📝 Generate Build Metadata
-        run: |
-          cat > docs/build-info.json << EOF
-          {
-            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "commit_sha": "$(git rev-parse HEAD)",
-            "commit_short": "$(git rev-parse --short HEAD)",
-            "branch": "$(git rev-parse --abbrev-ref HEAD)",
-            "workflow_run": "${{ github.run_number }}",
-            "triggered_by": "${{ github.event_name }}",
-            "actor": "${{ github.actor }}"
-          }
-          EOF
-          
-          echo "✅ Build metadata generated"
-      
-      - name: 📤 Upload Documentation Artifact
+          cd docs
+          npm run build
+
+      - name: 📤 Upload Docs Artifact
         uses: actions/upload-artifact@v4
         with:
           name: documentation-build-${{ github.run_number }}
-          path: docs/
-          retention-days: 30
-      
-      - name: 📋 Create Build Summary
-        run: |
-          echo "# 📚 Documentation Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Status:** Build Successful" >> $GITHUB_STEP_SUMMARY
-          echo "📅 **Build Date:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" >> $GITHUB_STEP_SUMMARY
-          echo "🔖 **Commit:** $(git rev-parse --short HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "🌿 **Branch:** $(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📊 Build Statistics" >> $GITHUB_STEP_SUMMARY
-          echo "- Documentation files: $(find docs -type f | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "- Total size: $(du -sh docs | cut -f1)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 🔗 Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "Documentation will be deployed to GitHub Pages" >> $GITHUB_STEP_SUMMARY
+          path: docs/dist
+          if-no-files-found: warn
 
   deploy-documentation:
-    name: Deploy to GitHub Pages
-    needs: build-documentation
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    
+    needs: build-docs
+
     steps:
+      - name: 🧾 Checkout repository
+        uses: actions/checkout@v4
+
       - name: 📥 Download Documentation Artifact
         uses: actions/download-artifact@v4
         with:
           name: documentation-build-${{ github.run_number }}
           path: docs/
-      
-      - name: 🔧 Setup Pages
-        uses: actions/configure-pages@v4
-      
-      - name: 📦 Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
+
+      - name: 🚀 Deploy docs to /docs on gh-pages (keep existing files)
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: docs/
-      
-      - name: 🚀 Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-      
-      - name: ✅ Deployment Summary
-        run: |
-          echo "# 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Status:** Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "🌐 **URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "📅 **Deployed:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 🎉 Documentation is now live!" >> $GITHUB_STEP_SUMMARY
-          echo "Visit your documentation at: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: docs/
+          destination_dir: docs
+          keep_files: true
